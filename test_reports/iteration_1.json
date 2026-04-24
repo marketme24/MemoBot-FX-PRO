@@ -1,0 +1,61 @@
+{
+  "summary": "First end-to-end test of MEMOBOT FX-PRO. Backend pytest suite: 36/36 PASS (auth, bot, strategies, trading, risk, market, AI sentiment, analytics, reports, payments, app lock, notifications, logout). Frontend Playwright run: login → dashboard, ticker bar, sidebar, bot start→RUNNING, trade stepper (validation/risk/routing/fill/record) all green, strategy creation, analytics chart, reports, subscription plans, settings — all work. Two latent backend bugs surfaced during testing (reported below) and two minor frontend console warnings.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "PUT /api/risk/profile and PUT /api/risk/protection",
+        "issue": "RiskEngine.evaluate uses hard dict key access (risk['max_daily_loss_usd'], protect['max_orders_per_minute'], etc.). If a user does a PARTIAL PUT of risk profile or protection settings, the stored doc exists but lacks required keys, and subsequent /trade/preview & /trade/execute return 500 with KeyError. The default-dict fallback in engines.py only triggers when the doc is completely missing, not when it's partial. Reproducer: PUT /api/risk/profile {\"max_position_size_usd\":5000} → then POST /api/trade/preview → 500. Fix: use risk.get(key, DEFAULT) everywhere in engines.py, OR merge defaults inside the PUT endpoints in server.py (lines 434-457).",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "/api/market/indicators/{symbol}, /api/ai/sentiment/{symbol}, /api/strategies/{id}/signal",
+        "issue": "When CoinGecko returns HTTP 429 (rate limited — frequently triggered during test runs), these endpoints propagate httpx.HTTPStatusError as a 500. The volatility check inside /trade/preview already handles 429 gracefully ('skipped (429)'); the pattern should be applied to klines fetches used by indicators/sentiment/signal. Suggest catching 429 in market_data.get_klines and returning cached/empty data so downstream endpoints degrade to 'neutral' rather than 500."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Dashboard — Cumulative PnL chart",
+        "issues": ["Recharts prints 'width(-1) and height(-1) of chart should be greater than 0' warnings on first render. Chart still renders correctly after data arrives but indicates the ResponsiveContainer parent has no enforced minHeight/minWidth. Low-severity console noise."]
+      },
+      {
+        "screen": "Select component (likely symbol dropdown or similar)",
+        "issues": ["React hydration warning: 'In HTML, <span> cannot be a child of <option>'. A shadcn/Radix Select item likely wraps its label in a <span> which ends up inside a native <option>. Not blocking — but will cause hydration mismatches."]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "FIX (HIGH): In /app/backend/engines.py RiskEngine.evaluate, replace every `risk[key]` and `protect[key]` with `risk.get(key, default)` / `protect.get(key, default)` so partial profiles don't cause 500s. OR merge with defaults inside PUT /api/risk/profile and PUT /api/risk/protection in /app/backend/server.py.",
+    "FIX (MEDIUM): In /app/backend/market_data.py, wrap CoinGecko klines calls with try/except on 429 and return last cached or empty list, so /api/market/indicators/*, /api/ai/sentiment/*, /api/strategies/*/signal don't return 500 under rate-limit.",
+    "FIX (LOW): Investigate React hydration warning `<span> cannot be a child of <option>` — likely a native <select><option> wrapping a span label in a component; replace with plain text content.",
+    "FIX (LOW): Add min-height to Dashboard Cumulative PnL ResponsiveContainer to silence Recharts width/height(-1) warnings."
+  ],
+  "critical_code_review_comments": [
+    "engines.py — hard dict key access to risk/protect config is fragile; should use .get(key, default) everywhere (root cause of HIGH bug above).",
+    "server.py — PUT /risk/profile and PUT /risk/protection accept partial bodies but persist them without ensuring required keys exist — write-through should merge with defaults.",
+    "market_data.py — CoinGecko 429 propagates as 500; add a simple in-memory cache with TTL + graceful fallback, since indicators/sentiment/signals depend on klines.",
+    "server.py is 784 lines — acceptable but approaching split-threshold; consider routers per domain (auth, trade, risk, market, reports, payments).",
+    "engines.py correctly excludes Mongo _id via projection ({'_id': 0}) — good.",
+    "Auth works via Bearer header from login response.access_token as documented — good."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py (created)",
+    "/app/backend/tests/__init__.py (created, empty)"
+  ],
+  "success_rate": {"backend": "100% (36/36)", "frontend": "100% of tested flows"},
+  "test_credentials": "admin@memobot.com / Admin12345 (admin, elite)",
+  "seed_data_creation": "Pytest created one TEST_ prefixed user per run via /api/auth/register, one temporary strategy (deleted), and overwrote admin's risk_profile and protection_settings with complete default docs. Admin's bot was left STOPPED at end of the run. No destructive cleanup needed.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend is fully functional for the happy-path. The only HIGH bug is partial-PUT → KeyError → 500 on trade endpoints. If you re-test after main agent's fix, PUT a 1-field risk profile then POST /trade/preview — it should return 200, not 500. Also intermittent CoinGecko 429s can cause indicator/sentiment/signal 500s; retry after ~60s if observed. Frontend is stable, only two low-severity console warnings noted.",
+  "rca_of_the_issue": "HIGH bug RCA: /app/backend/engines.py RiskEngine.evaluate lines 56, 68, 84, 100, 114 etc. use `risk[key]` and `protect[key]` (hard key access). The default-filler block at lines 42-49 only runs if `find_one` returns None. Once a doc exists (from any PUT — even partial), the default block is skipped, but the doc may be missing keys (PUT endpoints in server.py filter body to an allowed-set and upsert without merging defaults). Result: KeyError → 500 on /trade/preview and /trade/execute. Reproduction: 1) login admin, 2) PUT /api/risk/profile with only {\"max_position_size_usd\":5000}, 3) POST /api/bot/control {action:start}, 4) POST /api/trade/preview → 500 KeyError 'max_daily_loss_usd'. Mitigation: switch to .get() with defaults in engines.py (minimal change) OR ensure PUT endpoints merge with complete defaults before upserting."
+}
