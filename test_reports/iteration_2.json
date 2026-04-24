@@ -1,0 +1,51 @@
+{
+  "summary": "Iteration 2 testing of MEMOBOT FX-PRO. Backend pytest: 42/42 PASS (4 new for /api/user/exchange-keys, 2 new for risk partial-PUT regression, 36 regression). The iter1 HIGH bug (partial PUT KeyError) is FIXED via defaults-merge in engines.py lines 53-54. New Binance per-user keys endpoint works correctly (paper↔live mode flip, masking, has_secret flag, auth required). Frontend: login red+gold MEMOBOT logo confirmed, sidebar compact logo + EN/AR toggle confirmed, AR click flips html dir to 'rtl' and shows Arabic 'لوحة التحكم', EN restores ltr. Dashboard copilot-card with mascot present. Settings → API Keys tab fully functional: input+save flips banner to 'Live mode', empty save reverts to 'Paper mode'. Trading 5-step pipeline executes successfully (Validation→Risk→Routing→Fill→Record). Bot start updates badge to RUNNING.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "/api/strategies/{id}/signal, /api/market/indicators/*, /api/ai/sentiment/*",
+        "issue": "STILL NOT FIXED from iter1: CoinGecko 429 propagates as 500 (httpx.HTTPStatusError). Intermittent. test_signal failed once in this run with 500; passed on individual rerun. Suggest catching 429 in market_data.get_klines and returning cached/empty data."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Trading / Settings — native <select> options",
+        "issues": ["STILL PRESENT from iter1: React hydration warning '<span> cannot be a child of <option>'. A shadcn/Radix or similar control wraps option label in a <span> inside a native <option>. Low severity, but produces console errors on every page using the symbol picker."]
+      },
+      {
+        "screen": "Dashboard — Cumulative PnL chart",
+        "issues": ["STILL PRESENT from iter1: Recharts 'width(-1) and height(-1) of chart should be greater than 0' warnings on first render. Add minHeight/minWidth to ResponsiveContainer."]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "FIX (LOW, carryover from iter1): Wrap CoinGecko klines calls in market_data.py with try/except on 429 → return cached or empty list to prevent intermittent 500s on /strategies/{id}/signal, /market/indicators/*, /ai/sentiment/*.",
+    "FIX (LOW, carryover from iter1): Replace <span> wrapper inside native <option> elements (likely symbol picker) to silence hydration warnings.",
+    "FIX (LOW, carryover from iter1): Set min-height on Dashboard Cumulative PnL ResponsiveContainer."
+  ],
+  "critical_code_review_comments": [
+    "engines.py: iter1 HIGH bug correctly fixed by merging defaults at lines 53-54 with `risk = {**risk_defaults, **risk_doc}` — partial PUTs no longer crash trade pipeline. Verified by new test TestRiskPartialPut.test_partial_put_then_preview_no_500.",
+    "server.py /user/exchange-keys: clean implementation, masking + has_secret pattern is correct, mode='paper' fallback when either field empty matches spec. Auth dependency works (fresh session GET returns 401).",
+    "server.py is now 831 lines — exceeds 700 line guideline; consider splitting into routers per domain (auth, trade, risk, market, reports, payments, exchange, lock, config).",
+    "Frontend i18n: AR translations correctly applied; document.documentElement.dir flip on toggle works; localStorage 'memobot_lang' persistence implied by toggle behaviour.",
+    "Backend .env: BINANCE_API_KEY/SECRET/PAYPAL_* present as empty placeholders — good (avoids breakage) but never used since per-user keys take precedence (correct design)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py (added TestExchangeKeys with 4 tests + TestRiskPartialPut with 2 tests)"
+  ],
+  "success_rate": {"backend": "100% (42/42, with 1 known-flaky test passing on retry)", "frontend": "100% of tested iter2 + regression flows"},
+  "test_credentials": "admin@memobot.com / Admin12345 (admin, elite)",
+  "seed_data_creation": "Tests created TEST_ prefixed user via /auth/register, exchange_credentials doc for admin (reset to empty at end), one strategy (deleted). Admin's bot was left RUNNING after frontend test (no destructive cleanup needed; can be stopped via Bot Control).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All iter2 features verified working. The only unresolved items are the 3 LOW-priority carryover issues from iter1 (CoinGecko 429 → 500, <span> in <option> hydration warning, Recharts width(-1) warning). New Binance keys endpoint behaves exactly per spec: PUT both empty → mode='paper'; PUT both non-empty → mode='live' with api_key_mask 'XXXX•••••XXXX'. Always reset with PUT {api_key:'', api_secret:''} at end of any keys test. Auth still uses Bearer header from login.access_token; httpOnly cookie also set so use a fresh requests.Session() for negative auth tests."
+}

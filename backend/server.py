@@ -752,6 +752,53 @@ async def webhook_stripe(request: Request):
         return JSONResponse(status_code=400, content={"ok": False, "error": str(e)})
 
 
+# ═══════════════════════════ Exchange Credentials (Binance per-user) ═══════════════════════════
+class ExchangeKeysRequest(BaseModel):
+    api_key: str = ""
+    api_secret: str = ""
+
+
+def _mask(s: str) -> str:
+    if not s:
+        return ""
+    return s[:4] + "•" * max(0, len(s) - 8) + s[-4:]
+
+
+@api.get("/user/exchange-keys")
+async def get_exchange_keys(user=Depends(current_user)):
+    rec = await db.exchange_credentials.find_one({"user_id": user["id"]}, {"_id": 0}) or {}
+    return {
+        "exchange": "binance",
+        "api_key_mask": _mask(rec.get("api_key", "")),
+        "has_secret": bool(rec.get("api_secret")),
+        "mode": "live" if (rec.get("api_key") and rec.get("api_secret")) else "paper",
+        "updated_at": rec.get("updated_at"),
+    }
+
+
+@api.put("/user/exchange-keys")
+async def update_exchange_keys(body: ExchangeKeysRequest, user=Depends(current_user)):
+    await db.exchange_credentials.update_one(
+        {"user_id": user["id"]},
+        {"$set": {
+            "user_id": user["id"],
+            "exchange": "binance",
+            "api_key": body.api_key,
+            "api_secret": body.api_secret,
+            "updated_at": utcnow_iso(),
+        }},
+        upsert=True,
+    )
+    rec = await db.exchange_credentials.find_one({"user_id": user["id"]}, {"_id": 0})
+    return {
+        "exchange": "binance",
+        "api_key_mask": _mask(rec.get("api_key", "")),
+        "has_secret": bool(rec.get("api_secret")),
+        "mode": "live" if (rec.get("api_key") and rec.get("api_secret")) else "paper",
+        "updated_at": rec.get("updated_at"),
+    }
+
+
 # ═══════════════════════════ Config / About Bot ═══════════════════════════
 @api.get("/config/about")
 async def get_about():

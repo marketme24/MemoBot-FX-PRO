@@ -2,10 +2,14 @@ import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { formatApiError } from "../lib/api";
-import { Activity, Mail, KeyRound, User, ArrowRight } from "lucide-react";
+import { useI18n } from "../i18n/I18nContext";
+import { Mail, KeyRound, User, ArrowRight } from "lucide-react";
+
+const LOGO_URL = "https://customer-assets.emergentagent.com/job_quant-execution-pro/artifacts/hhbkndu5_MEMOBOT_ELEGANT_LOGO.png";
 
 export default function Register() {
   const { register } = useAuth();
+  const { t } = useI18n();
   const nav = useNavigate();
   const [form, setForm] = useState({ email: "", password: "", name: "" });
   const [err, setErr] = useState("");
@@ -31,28 +35,27 @@ export default function Register() {
         <form onSubmit={submit} className="w-full max-w-sm space-y-6">
           <div>
             <div className="flex items-center gap-2 mb-8 md:hidden">
-              <div className="h-8 w-8 rounded-sm bg-[#007AFF] flex items-center justify-center">
-                <Activity size={18} />
-              </div>
-              <div className="font-display text-xl font-black">MEMOBOT FX-PRO</div>
+              <img src={LOGO_URL} alt="MEMOBOT" className="h-10 w-10 object-contain" />
             </div>
-            <div className="font-mono text-[10px] text-white/40 tracking-[0.25em] uppercase">create account</div>
-            <h1 className="font-display text-4xl font-black tracking-tighter uppercase mt-1">Start paper-trading</h1>
-            <p className="text-sm text-white/50 mt-2">Free forever. No card required for paper mode.</p>
+            <div className="font-mono text-[10px] text-white/40 tracking-[0.25em] uppercase">{t("register_overline")}</div>
+            <h1 className="font-display text-4xl font-black tracking-tighter uppercase mt-1 bg-gradient-to-r from-[#FFD27D] to-[#FF3B30] bg-clip-text text-transparent">
+              {t("register_title")}
+            </h1>
+            <p className="text-sm text-white/50 mt-2">{t("register_subtitle")}</p>
           </div>
 
           <div className="space-y-3">
-            <Field icon={<User size={14} />} label="name">
+            <Field icon={<User size={14} />} label={t("register_name")}>
               <input data-testid="register-name" required value={form.name}
                      onChange={(e)=>setForm({...form,name:e.target.value})}
                      className="flex-1 bg-transparent py-3 text-sm outline-none" />
             </Field>
-            <Field icon={<Mail size={14} />} label="email">
+            <Field icon={<Mail size={14} />} label={t("login_email")}>
               <input data-testid="register-email" type="email" required value={form.email}
                      onChange={(e)=>setForm({...form,email:e.target.value})}
                      className="flex-1 bg-transparent py-3 text-sm outline-none" />
             </Field>
-            <Field icon={<KeyRound size={14} />} label="password (min 6)">
+            <Field icon={<KeyRound size={14} />} label={t("register_password_hint")}>
               <input data-testid="register-password" type="password" required minLength={6} value={form.password}
                      onChange={(e)=>setForm({...form,password:e.target.value})}
                      className="flex-1 bg-transparent py-3 text-sm outline-none" />
@@ -63,33 +66,23 @@ export default function Register() {
             <div data-testid="register-error" className="border border-[#FF3B30]/40 bg-[#FF3B30]/5 text-[#FF3B30] text-xs px-3 py-2 font-mono">{err}</div>
           )}
 
-          <button
-            data-testid="register-submit"
-            type="submit"
-            disabled={busy}
-            className="w-full bg-[#007AFF] text-white py-3 font-display font-bold uppercase tracking-wider text-sm hover:bg-[#3395FF] transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
-          >
-            {busy ? "Creating…" : <>Create account <ArrowRight size={16} /></>}
+          <button data-testid="register-submit" type="submit" disabled={busy}
+            className="w-full bg-gradient-to-r from-[#FF3B30] to-[#FFD27D] text-black py-3 font-display font-bold uppercase tracking-wider text-sm hover:opacity-90 transition-opacity flex items-center justify-center gap-2 disabled:opacity-50">
+            {busy ? t("register_submit_busy") : <>{t("register_submit")} <ArrowRight size={16} /></>}
           </button>
 
           <div className="text-xs text-white/50">
-            Already registered? <Link to="/login" className="text-[#007AFF] hover:underline" data-testid="nav-to-login">Sign in</Link>
+            {t("register_already")} <Link to="/login" className="text-[#FFD27D] hover:underline" data-testid="nav-to-login">{t("register_go_login")}</Link>
           </div>
         </form>
       </div>
 
-      <div className="relative hidden md:block border-l border-white/10 order-1 md:order-2">
-        <img
-          src="https://images.unsplash.com/photo-1643962578896-ee17ec070d12?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1ODB8MHwxfHNlYXJjaHwyfHxjcnlwdG8lMjBtYXJrZXQlMjBncmFwaHMlMjBhYnN0cmFjdCUyMGRhcmt8ZW58MHx8fHwxNzc3MDA1MDI5fDA&ixlib=rb-4.1.0&q=85"
-          alt="Trading"
-          className="absolute inset-0 w-full h-full object-cover opacity-30"
-        />
-        <div className="absolute inset-0 bg-gradient-to-bl from-[#0a0a0a]/40 to-[#0a0a0a]" />
-        <div className="relative p-10 h-full flex flex-col justify-end">
-          <div className="font-display text-5xl font-black uppercase leading-none tracking-tighter">
-            <span className="text-[#007AFF]">Control</span> your<br/>strategies.
-          </div>
-          <p className="mt-5 text-sm text-white/60 max-w-sm">Grid · Trend · Mean-Reversion · Breakout · Scalping — with Claude-powered sentiment.</p>
+      <div className="relative hidden md:flex border-l border-white/10 order-1 md:order-2 items-center justify-center p-10">
+        <div className="absolute inset-0 bg-gradient-to-bl from-[#1a0000] via-[#0a0a0a] to-[#0a0a0a]" />
+        <div className="absolute inset-0 grid-bg opacity-30" />
+        <div className="relative text-center">
+          <img src={LOGO_URL} alt="MEMOBOT" className="w-72 h-72 object-contain mx-auto" />
+          <p className="mt-4 text-sm text-white/60 max-w-sm mx-auto">{t("register_hero_sub")}</p>
         </div>
       </div>
     </div>

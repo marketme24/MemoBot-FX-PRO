@@ -317,6 +317,75 @@ class TestNotifications:
         assert r.status_code == 200
 
 
+# ---------- Iter 2: Exchange Keys (Binance per-user) ----------
+class TestExchangeKeys:
+    def test_get_initial_paper_mode(self, client, auth_headers):
+        # Reset to empty first so the assertion is deterministic
+        client.put(f"{API}/user/exchange-keys", headers=auth_headers,
+                   json={"api_key": "", "api_secret": ""})
+        r = client.get(f"{API}/user/exchange-keys", headers=auth_headers)
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert data.get("exchange") == "binance"
+        assert data.get("mode") == "paper"
+        assert data.get("has_secret") is False
+        assert "api_key_mask" in data
+
+    def test_put_keys_flips_to_live(self, client, auth_headers):
+        body = {"api_key": "TEST_KEYABCDEFGHIJKL1234", "api_secret": "TEST_SECRETzyxwvut987654321"}
+        r = client.put(f"{API}/user/exchange-keys", headers=auth_headers, json=body)
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert data.get("mode") == "live"
+        assert data.get("has_secret") is True
+        # mask should not be empty and should include first 4 chars
+        assert data.get("api_key_mask", "").startswith("TEST")
+
+        # GET should reflect persistence
+        r2 = client.get(f"{API}/user/exchange-keys", headers=auth_headers)
+        assert r2.status_code == 200
+        d2 = r2.json()
+        assert d2.get("mode") == "live"
+        assert d2.get("has_secret") is True
+
+    def test_put_empty_keys_resets_to_paper(self, client, auth_headers):
+        r = client.put(f"{API}/user/exchange-keys", headers=auth_headers,
+                       json={"api_key": "", "api_secret": ""})
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert data.get("mode") == "paper"
+        assert data.get("has_secret") is False
+
+    def test_get_requires_auth(self):
+        # Use a fresh session to ensure no leftover cookies from login/register
+        fresh = requests.Session()
+        r = fresh.get(f"{API}/user/exchange-keys")
+        assert r.status_code in (401, 403)
+
+
+# ---------- Iter 2: Risk partial PUT regression (was iter1 HIGH bug) ----------
+class TestRiskPartialPut:
+    def test_partial_put_then_preview_no_500(self, client, auth_headers):
+        # Single-field partial PUT — must not crash subsequent /trade/preview with KeyError
+        r = client.put(f"{API}/risk/profile", headers=auth_headers,
+                       json={"max_position_size_usd": 5000})
+        assert r.status_code in (200, 204), r.text
+
+        # Start bot then preview
+        client.post(f"{API}/bot/control", headers=auth_headers, json={"action": "start"})
+        time.sleep(0.3)
+        rp = client.post(f"{API}/trade/preview", headers=auth_headers, json={
+            "symbol": "BTCUSDT", "side": "buy", "quantity": 0.01, "type": "market"
+        })
+        assert rp.status_code == 200, f"partial-PUT regression: /trade/preview returned {rp.status_code}: {rp.text}"
+        client.post(f"{API}/bot/control", headers=auth_headers, json={"action": "stop"})
+
+    def test_partial_put_protection(self, client, auth_headers):
+        r = client.put(f"{API}/risk/protection", headers=auth_headers,
+                       json={"circuit_breaker_pct": 12})
+        assert r.status_code in (200, 204), r.text
+
+
 # ---------- Logout (run last) ----------
 class TestZLogout:
     def test_logout(self, client, auth_headers):

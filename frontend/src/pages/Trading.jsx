@@ -3,8 +3,9 @@ import Layout from "../components/Layout";
 import { api, formatApiError } from "../lib/api";
 import { motion, AnimatePresence } from "framer-motion";
 import { useBot } from "../context/BotContext";
+import { useI18n } from "../i18n/I18nContext";
 import {
-  ArrowDown, ArrowUp, Check, AlertTriangle, Zap, ExternalLink, Loader2, Brain,
+  ArrowDown, ArrowUp, Check, AlertTriangle, ExternalLink, Loader2, Brain, Zap,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -18,6 +19,7 @@ const STEPS = [
 
 export default function Trading() {
   const { tickers, bot } = useBot();
+  const { t } = useI18n();
   const [symbol, setSymbol] = useState("BTCUSDT");
   const [qty, setQty] = useState(0.01);
   const [side, setSide] = useState("buy");
@@ -124,13 +126,13 @@ export default function Trading() {
     <Layout>
       <div className="flex flex-wrap items-end justify-between gap-4 mb-6">
         <div>
-          <div className="font-mono text-[10px] text-white/40 tracking-[0.25em] uppercase">manual trade</div>
-          <h1 className="font-display text-4xl sm:text-5xl font-black tracking-tighter uppercase">Trading panel</h1>
+          <div className="font-mono text-[10px] text-white/40 tracking-[0.25em] uppercase">{t("trading_overline")}</div>
+          <h1 className="font-display text-4xl sm:text-5xl font-black tracking-tighter uppercase bg-gradient-to-r from-[#FFD27D] to-[#FF3B30] bg-clip-text text-transparent">{t("trading_title")}</h1>
         </div>
         <a href={ticker?.binance_url || "#"} target="_blank" rel="noreferrer"
            data-testid="open-binance-chart"
-           className="inline-flex items-center gap-2 border border-white/10 hover:border-[#007AFF] px-3 py-2 text-xs font-mono uppercase tracking-wider">
-          open on binance <ExternalLink size={12} />
+           className="inline-flex items-center gap-2 border border-white/10 hover:border-[#FFD27D] px-3 py-2 text-xs font-mono uppercase tracking-wider">
+          {t("open_binance")} <ExternalLink size={12} />
         </a>
       </div>
 

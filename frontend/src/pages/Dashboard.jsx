@@ -3,15 +3,19 @@ import Layout from "../components/Layout";
 import { api } from "../lib/api";
 import { useBot } from "../context/BotContext";
 import { useAuth } from "../context/AuthContext";
+import { useI18n } from "../i18n/I18nContext";
 import {
   Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid,
 } from "recharts";
-import { TrendingUp, TrendingDown, Activity, DollarSign, Percent, Target, Zap, ExternalLink } from "lucide-react";
+import { TrendingUp, Activity, DollarSign, Target, ExternalLink, Brain } from "lucide-react";
 import { Link } from "react-router-dom";
+
+const MASCOT_URL = "https://customer-assets.emergentagent.com/job_quant-execution-pro/artifacts/8mhx03q9_mascot.png";
 
 export default function Dashboard() {
   const { bot, controlBot, tickers, notifications } = useBot();
   const { user } = useAuth();
+  const { t } = useI18n();
   const [analytics, setAnalytics] = useState(null);
   const [opps, setOpps] = useState([]);
   const [recentTrades, setRecentTrades] = useState([]);
@@ -43,13 +47,13 @@ export default function Dashboard() {
       {/* Hero */}
       <div className="flex flex-wrap items-end justify-between gap-4 mb-6">
         <div>
-          <div className="font-mono text-[10px] text-white/40 tracking-[0.25em] uppercase">welcome back, {user?.name}</div>
-          <h1 data-testid="dashboard-title" className="font-display text-4xl sm:text-5xl font-black tracking-tighter uppercase mt-1">
-            Command deck
+          <div className="font-mono text-[10px] text-white/40 tracking-[0.25em] uppercase">{t("dashboard_overline")} {user?.name}</div>
+          <h1 data-testid="dashboard-title" className="font-display text-4xl sm:text-5xl font-black tracking-tighter uppercase mt-1 bg-gradient-to-r from-[#FFD27D] to-[#FF3B30] bg-clip-text text-transparent">
+            {t("dashboard_title")}
           </h1>
         </div>
         <div className="flex items-center gap-3">
-          <StateBadge status={bot?.status} />
+          <StateBadge status={bot?.status} t={t} />
           <button
             data-testid="dashboard-engine-toggle"
             onClick={() => controlBot(bot?.status === "RUNNING" ? "stop" : "start")}
@@ -57,19 +61,34 @@ export default function Dashboard() {
               bot?.status === "RUNNING" ? "bg-[#FF3B30] hover:bg-[#FF3B30]/80" : "bg-[#34C759] hover:bg-[#34C759]/80"
             } text-white`}
           >
-            {bot?.status === "RUNNING" ? "Stop engine" : "Start engine"}
+            {bot?.status === "RUNNING" ? t("stop_engine") : t("start_engine")}
           </button>
         </div>
       </div>
 
+      {/* AI Co-pilot mascot strip */}
+      <div className="mb-6 border border-white/10 bg-gradient-to-r from-[#0a1f3d] via-[#0a0a0a] to-[#1a0a1f] p-4 flex items-center gap-4 overflow-hidden" data-testid="copilot-card">
+        <img src={MASCOT_URL} alt="Memo mascot" className="h-20 w-20 object-contain shrink-0 drop-shadow-[0_0_18px_rgba(0,200,255,0.4)]" />
+        <div className="flex-1 min-w-0">
+          <div className="font-mono text-[10px] text-white/40 tracking-[0.25em] uppercase flex items-center gap-1">
+            <Brain size={11} /> co-pilot
+          </div>
+          <div className="font-display text-lg sm:text-xl font-bold tracking-tight mt-0.5">{t("copilot_title")}</div>
+          <div className="text-xs text-white/60 mt-0.5">{t("copilot_sub")}</div>
+        </div>
+        <Link to="/market" className="hidden sm:inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-widest text-[#FFD27D] hover:underline shrink-0">
+          {t("view_details")}
+        </Link>
+      </div>
+
       {/* KPI row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <KPI testid="kpi-total-pnl" icon={<DollarSign size={14} />} label="Total PnL" value={`$${kpi.total_pnl.toFixed(2)}`}
-             tone={kpi.total_pnl >= 0 ? "up" : "down"} sub={`${kpi.trade_count} trades`} />
-        <KPI testid="kpi-volume" icon={<Activity size={14} />} label="Volume" value={`$${(kpi.total_volume/1000).toFixed(1)}K`} sub="all time" />
-        <KPI testid="kpi-avg-daily" icon={<TrendingUp size={14} />} label="Avg Daily PnL" value={`$${kpi.avg_daily_pnl.toFixed(2)}`}
+        <KPI testid="kpi-total-pnl" icon={<DollarSign size={14} />} label={t("kpi_total_pnl")} value={`$${kpi.total_pnl.toFixed(2)}`}
+             tone={kpi.total_pnl >= 0 ? "up" : "down"} sub={`${kpi.trade_count} ${t("kpi_trades")}`} />
+        <KPI testid="kpi-volume" icon={<Activity size={14} />} label={t("kpi_volume")} value={`$${(kpi.total_volume/1000).toFixed(1)}K`} sub={t("kpi_all_time")} />
+        <KPI testid="kpi-avg-daily" icon={<TrendingUp size={14} />} label={t("kpi_avg_daily")} value={`$${kpi.avg_daily_pnl.toFixed(2)}`}
              tone={kpi.avg_daily_pnl >= 0 ? "up" : "down"} />
-        <KPI testid="kpi-profit-factor" icon={<Target size={14} />} label="Profit Factor" value={kpi.profit_factor} sub={`Win ${kpi.win_rate.toFixed(1)}%`} />
+        <KPI testid="kpi-profit-factor" icon={<Target size={14} />} label={t("kpi_profit_factor")} value={kpi.profit_factor} sub={`${t("kpi_win")} ${kpi.win_rate.toFixed(1)}%`} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -196,12 +215,13 @@ function KPI({ icon, label, value, sub, tone, testid }) {
   );
 }
 
-function StateBadge({ status }) {
+function StateBadge({ status, t }) {
   const color = status === "RUNNING" ? "#34C759" : status === "ERROR" ? "#FF3B30" : "#71717A";
+  const label = status === "RUNNING" ? t("running") : status === "ERROR" ? t("error") : t("stopped");
   return (
     <div data-testid="bot-state-badge" className="inline-flex items-center gap-2 border border-white/10 px-3 py-1.5 font-mono text-[11px] uppercase tracking-widest">
       <span className="h-2 w-2 rounded-full pulse-dot" style={{ background: color, boxShadow: `0 0 8px ${color}` }} />
-      Engine · <span style={{ color }}>{status || "STOPPED"}</span>
+      Engine · <span style={{ color }}>{label}</span>
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { Toaster } from "sonner";
 
 import { AuthProvider } from "./context/AuthContext";
 import { BotProvider } from "./context/BotContext";
+import { I18nProvider } from "./i18n/I18nContext";
 import ProtectedRoute from "./components/ProtectedRoute";
 
 import Login from "./pages/Login";
@@ -25,8 +26,9 @@ import PaymentSuccess from "./pages/PaymentSuccess";
 function App() {
   return (
     <div className="App">
-      <AuthProvider>
-        <BotProvider>
+      <I18nProvider>
+        <AuthProvider>
+          <BotProvider>
           <Toaster theme="dark" position="top-right" richColors closeButton />
           <BrowserRouter>
             <Routes>
@@ -52,6 +54,7 @@ function App() {
           </BrowserRouter>
         </BotProvider>
       </AuthProvider>
+      </I18nProvider>
     </div>
   );
 }

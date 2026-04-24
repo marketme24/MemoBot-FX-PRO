@@ -1,12 +1,14 @@
 import React, { useState } from "react";
 import Layout from "../components/Layout";
 import { useBot } from "../context/BotContext";
+import { useI18n } from "../i18n/I18nContext";
 import { api } from "../lib/api";
 import { Play, Square, RefreshCw, Volume2, VolumeX, Bell, BellOff, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 
 export default function BotControl() {
   const { bot, controlBot, reload } = useBot();
+  const { t } = useI18n();
   const [busy, setBusy] = useState(false);
   const [log, setLog] = useState([]);
 
@@ -38,8 +40,8 @@ export default function BotControl() {
   return (
     <Layout>
       <div className="mb-6">
-        <div className="font-mono text-[10px] text-white/40 tracking-[0.25em] uppercase">engine</div>
-        <h1 className="font-display text-4xl sm:text-5xl font-black tracking-tighter uppercase">Bot Control</h1>
+        <div className="font-mono text-[10px] text-white/40 tracking-[0.25em] uppercase">{t("bot_overline")}</div>
+        <h1 className="font-display text-4xl sm:text-5xl font-black tracking-tighter uppercase bg-gradient-to-r from-[#FFD27D] to-[#FF3B30] bg-clip-text text-transparent">{t("bot_title")}</h1>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
