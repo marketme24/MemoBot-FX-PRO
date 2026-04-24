@@ -1,0 +1,170 @@
+{
+  "theme": "dark",
+  "archetype": "Archetype 2: The Performance Pro",
+  "domain": "Trading Dashboard SaaS / Fintech Crypto",
+  "design_philosophy": "Command-center focus. Tactical minimalism. Deep Obsidian anchor with pure white data clarity and Volt Blue / Electric Blaze triggers. High information density like a modern Bloomberg Terminal. No decorative gradients. Every pixel serves function.",
+  "colors": {
+    "background": {
+      "base": "#0A0A0A",
+      "surface": "#121212",
+      "surface_elevated": "#1A1A1A"
+    },
+    "text": {
+      "primary": "#FFFFFF",
+      "secondary": "#A1A1AA",
+      "tertiary": "#71717A"
+    },
+    "brand": {
+      "primary": "#007AFF",
+      "primary_hover": "#3395FF"
+    },
+    "accents": {
+      "buy_volt_blue": "#007AFF",
+      "sell_electric_blaze": "#FF3B30",
+      "warning": "#FFCC00",
+      "success": "#34C759",
+      "border": "rgba(255, 255, 255, 0.1)"
+    }
+  },
+  "typography": {
+    "fonts": {
+      "headings": "'Barlow Condensed', 'Chivo', 'Cabinet Grotesk', sans-serif",
+      "body": "'IBM Plex Sans', sans-serif",
+      "mono": "'IBM Plex Mono', 'JetBrains Mono', monospace"
+    },
+    "scale": {
+      "h1": "text-4xl sm:text-5xl font-black tracking-tighter uppercase",
+      "h2": "text-2xl sm:text-3xl font-bold tracking-tight uppercase",
+      "h3": "text-xl sm:text-2xl font-semibold tracking-tight",
+      "h4": "text-lg sm:text-xl font-medium",
+      "body": "text-base leading-relaxed",
+      "small": "text-sm text-secondary",
+      "overline": "text-xs font-bold tracking-[0.2em] uppercase text-secondary"
+    }
+  },
+  "spacing_and_layout": {
+    "strategy": "The 'Control Room Grid'",
+    "rules": [
+      "Base Grid: grid-cols-1 md:grid-cols-3 lg:grid-cols-4 or 12-col dense layouts",
+      "Gap Strategy: Tight (gap-4 or gap-6) for high data density.",
+      "Every widget must stretch to fill its grid space (h-full). No jagged bottoms.",
+      "Containers must use pure 1px solid borders (border-white/10) instead of heavy shadows."
+    ]
+  },
+  "surfaces_and_micro_themes": {
+    "dashboard_cards": {
+      "style": "Grid Borders & Flat Solid",
+      "classes": "bg-[#121212] border border-white/10 rounded-none md:rounded-sm",
+      "hover": "hover:border-white/20 transition-colors"
+    },
+    "trading_panel": {
+      "style": "The Tracing Beam (Active Focus)",
+      "description": "When active, the panel border glows subtly using a mask-image or framer-motion path."
+    },
+    "bot_indicator": {
+      "style": "Retro-Futurism / Terminal",
+      "description": "Green 'Active' or Red 'Stopped' glowing badge with subtle drop-shadow (e.g., drop-shadow-[0_0_8px_rgba(52,199,89,0.6)])."
+    }
+  },
+  "motion_and_interactions": {
+    "global": "Micro-interactions for feedback. Minimalist transitions. Respect prefers-reduced-motion.",
+    "ticker_bar": "Smooth, continuous marquee scroll (use react-fast-marquee). Slow and precise, not frantic.",
+    "trade_workflow": "Stepper animation using Framer Motion (layout transitions). Validation -> Risk Check -> Routing -> Fill -> Record.",
+    "hover_states": "Buttons explicitly define hover text and background (e.g., hover:bg-white/10 hover:text-white)."
+  },
+  "components": {
+    "buttons": "Sharp edges, flat background. CTA uses brand color. Action buttons use 1px border. No soft radii.",
+    "inputs": "Shadcn components heavily customized to match Dark Tactical Theme. border-white/10, focus:ring-1 focus:ring-[#007AFF].",
+    "charts": "Recharts with dark mode customization. Use #007AFF and #FF3B30 for lines/bars. Hide grid lines or make them extremely subtle (white/5).",
+    "tables": "Dense. text-sm. Mono font for numbers. border-b border-white/10."
+  },
+  "pages_architecture": [
+    {
+      "name": "Login / Register",
+      "layout": "Split layout. Deep dark tech abstract image on left, tactical minimalist form on right.",
+      "special": "JWT Auth flow integration."
+    },
+    {
+      "name": "App Lock Screen",
+      "layout": "Centered massive 6-digit PIN entry using Mono font, plus a glowing WebAuthn biometric button.",
+      "special": "Abstract geometric dark background."
+    },
+    {
+      "name": "Main Dashboard",
+      "layout": "Control Room Grid. Global bot status hero, top ticker bar, KPI bento grid, PnL area chart, recent trades.",
+      "special": "Crypto Marquee."
+    },
+    {
+      "name": "Trading Panel",
+      "layout": "Focused layout. Symbol selector (Binance deep-link), order book depth, execution stepper.",
+      "special": "Buy/Sell buttons with transparent multi-step validation and fill animation."
+    },
+    {
+      "name": "Strategies",
+      "layout": "List + Editor side-by-side or modal. Grid/Trend/Mean-Reversion toggles.",
+      "special": "AI sentiment toggle switch."
+    },
+    {
+      "name": "Risk & Protection",
+      "layout": "Sliders for max drawdown, leverage. Circuit breaker toggles.",
+      "special": "Heavy use of warning/danger color accents for destructive limits."
+    },
+    {
+      "name": "Performance Analytics",
+      "layout": "Data-heavy. Cumulative PnL chart spanning full width, profit by strategy bars below.",
+      "special": "Use Recharts with custom tooltips."
+    },
+    {
+      "name": "Reports",
+      "layout": "Tabs (Daily/Weekly/Monthly), exportable data table, summary stat cards.",
+      "special": "Export to CSV action button prominently placed."
+    },
+    {
+      "name": "Market Overview",
+      "layout": "Top opportunities list, technical indicator gauges (MFI, CCI, SMC, Order Flow).",
+      "special": "Heavy data visualization."
+    },
+    {
+      "name": "Bot Control",
+      "layout": "Central dashboard for engine state. Start/Stop/Restart massive buttons, terminal-style log output.",
+      "special": "Live pulsing state badge."
+    },
+    {
+      "name": "Subscription / Payments",
+      "layout": "Pricing tier cards. Stripe + PayPal integration flows.",
+      "special": "Highlight current plan with 'Tracing Beam' effect."
+    },
+    {
+      "name": "Settings / Profile",
+      "layout": "Vertical tabs list on left, specific config forms on right. App lock, API keys, Notifications.",
+      "special": "Masked API key fields."
+    }
+  ],
+  "media": {
+    "login_bg": {
+      "url": "https://images.unsplash.com/photo-1643962578896-ee17ec070d12?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1ODB8MHwxfHNlYXJjaHwyfHxjcnlwdG8lMjBtYXJrZXQlMjBncmFwaHMlMjBhYnN0cmFjdCUyMGRhcmt8ZW58MHx8fHwxNzc3MDA1MDI5fDA&ixlib=rb-4.1.0&q=85",
+      "description": "Dark crypto market graphs, suitable for login hero background"
+    },
+    "lock_screen_bg": {
+      "url": "https://images.unsplash.com/photo-1430276084627-789fe55a6da0?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDQ2NDJ8MHwxfHNlYXJjaHwxfHxwYXltZW50JTIwc2VjdXJpdHklMjBsb2NrJTIwZGFya3xlbnwwfHx8fDE3NzcwMDUwMjl8MA&ixlib=rb-4.1.0&q=85",
+      "description": "Payment security lock theme, abstract dark metal context"
+    },
+    "user_avatar": {
+      "url": "https://images.unsplash.com/photo-1627890458144-4c0c481bf4b8?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzV8MHwxfHNlYXJjaHwxfHxwcm9mZXNzaW9uYWwlMjB1c2VyJTIwYXZhdGFyJTIwZGFyayUyMGJhY2tncm91bmR8ZW58MHx8fHwxNzc3MDA1MDI5fDA&ixlib=rb-4.1.0&q=85",
+      "description": "Professional user avatar on dark background"
+    }
+  },
+  "accessibility_and_testing": {
+    "contrast": "Ensure APCA contrast minimums. Use Text Shadow over gradients/images.",
+    "testing_attributes": "All interactive elements MUST include data-testid (e.g., data-testid='trade-buy-button', data-testid='bot-start-button')."
+  },
+  "instructions_to_main_agent": [
+    "Use pure HTML + Tailwind for macro layouts. Avoid Shadcn for standard structural components to allow deep bento-grid customization.",
+    "Use Shadcn ONLY for complex logic (Select, Dropdowns, Dialogs, Tables) but strip their default borders/radii to match the 'Tactical' sharp theme.",
+    "Implement the moving Crypto Ticker Bar using 'react-fast-marquee' at the top level of the dashboard layout.",
+    "Ensure the Trading Panel is highly interactive, explicitly showing the 'validation -> risk check -> routing -> fill -> record' state machine steps using framer-motion.",
+    "All Recharts instances must have their background set to transparent and axis/grid lines styled with 'rgba(255, 255, 255, 0.1)'.",
+    "Install required dependencies: yarn add react-fast-marquee framer-motion recharts @phosphor-icons/react lucide-react sonner clsx tailwind-merge.",
+    "Do NOT use placeholder images. Use ONLY the URLs provided in the media section of this JSON."
+  ]
+}
