@@ -38,15 +38,20 @@ class RiskEngine:
         """
         results: Dict[str, Any] = {"checks": [], "passed": True}
 
-        risk = await self.db.risk_profiles.find_one({"user_id": user_id}, {"_id": 0})
-        if not risk:
-            risk = {"max_drawdown_pct": 10, "max_leverage": 3, "max_position_size_usd": 5000,
-                    "max_daily_loss_usd": 500, "max_concurrent_trades": 5, "level": "mid"}
-        protect = await self.db.protection_settings.find_one({"user_id": user_id}, {"_id": 0})
-        if not protect:
-            protect = {"full_risk_protection": True, "daily_drawdown_limit_pct": 5,
-                       "slippage_limit_pct": 0.5, "data_stability_required": True,
-                       "max_orders_per_minute": 10, "circuit_breaker_pct": 8}
+        # Defaults applied defensively — profiles may be partial.
+        risk_defaults = {
+            "max_drawdown_pct": 10.0, "max_leverage": 3.0, "max_position_size_usd": 5000.0,
+            "max_daily_loss_usd": 500.0, "max_concurrent_trades": 5, "level": "mid",
+        }
+        protect_defaults = {
+            "full_risk_protection": True, "daily_drawdown_limit_pct": 5.0,
+            "slippage_limit_pct": 0.5, "data_stability_required": True,
+            "max_orders_per_minute": 10, "circuit_breaker_pct": 8.0,
+        }
+        risk_doc = await self.db.risk_profiles.find_one({"user_id": user_id}, {"_id": 0}) or {}
+        protect_doc = await self.db.protection_settings.find_one({"user_id": user_id}, {"_id": 0}) or {}
+        risk = {**risk_defaults, **{k: v for k, v in risk_doc.items() if v is not None}}
+        protect = {**protect_defaults, **{k: v for k, v in protect_doc.items() if v is not None}}
 
         ticker = await get_ticker(order_req["trading_pair"])
         price = ticker["price"]
