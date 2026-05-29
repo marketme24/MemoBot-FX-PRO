@@ -77,8 +77,6 @@ export class PaperEngine {
       ) {
         pos.size += order.size;
       } else {
-        const pnl = (order.price! - pos.entryPrice) * order.size * (pos.side === 'LONG' ? 1 : -1);
-        this.balance += pnl; 
         pos.size -= order.size;
         if (pos.size <= 0) {
           this.positions = this.positions.filter(p => p.id !== pos.id);

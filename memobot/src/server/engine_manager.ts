@@ -97,8 +97,9 @@ class EngineManager {
        // Let the brain decide the direction based on the price history
        // Use a default strategy ID; you can make it configurable per bot
        const strategyId = 'trend_following';
-       const direction = 'BUY'; // placeholder, the brain will decide based on indicators
-       const decision = iBrain.evaluateTradeProposal(strategyId, existing!.symbol, direction, existing!.priceHistory);
+       const buyDecision = iBrain.evaluateTradeProposal(strategyId, existing!.symbol, 'BUY', existing!.priceHistory);
+       const sellDecision = iBrain.evaluateTradeProposal(strategyId, existing!.symbol, 'SELL', existing!.priceHistory);
+       const decision = sellDecision.confidence > buyDecision.confidence ? sellDecision : buyDecision;
        
        // Heartbeat log
        if ((global as any).addBotLog && decision.action !== 'HOLD') {
