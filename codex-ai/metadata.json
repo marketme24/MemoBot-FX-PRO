@@ -1,0 +1,5 @@
+{
+  "name": "MEMOCODEX AI",
+  "description": "Open-source, provider-agnostic AI coding assistant. Supports ALL programming languages via any free OpenAI-compatible API (Groq, HuggingFace, Ollama, OpenRouter, Together, Gemini, Cohere, LM Studio, or any custom endpoint). No vendor lock-in. No paid subscriptions required.",
+  "requestFramePermissions": ["microphone"]
+}
