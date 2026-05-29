@@ -1,0 +1,44 @@
+{
+  "testMode": {
+    "enabled": false,
+    "symbol": "BTC/USDT",
+    "tradeAmountUsdt": 20,
+    "holdSeconds": 30,
+    "maxRounds": 1,
+    "useTestnet": false,
+    "logLevel": "verbose"
+  },
+  "trading": {
+    "defaultSymbol": "BTC/USDT",
+    "defaultMode": "paper",
+    "allowedSymbols": ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT"],
+    "maxOpenPositions": 5,
+    "defaultOrderType": "market"
+  },
+  "risk": {
+    "maxDrawdownPct": 5,
+    "maxLeverage": 10,
+    "maxPositionSizePct": 10,
+    "maxPortfolioExposurePct": 40,
+    "minConfidence": 0.6,
+    "maxDailyLossUsdt": 5000
+  },
+  "circuitBreaker": {
+    "warningDrawdownPct": 3,
+    "criticalDrawdownPct": 5,
+    "maxConsecutiveLosses": 5,
+    "cooldownMs": 300000
+  },
+  "exchange": {
+    "id": "binance",
+    "rateLimit": true,
+    "maxRetries": 3,
+    "retryDelayMs": 2000,
+    "timeoutMs": 30000
+  },
+  "fees": {
+    "spotTakerPct": 0.1,
+    "spotMakerPct": 0.1,
+    "performanceFeePct": 2.0
+  }
+}

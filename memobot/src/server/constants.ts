@@ -1,0 +1,50 @@
+// src/server/constants.ts
+
+export const TEST_MODE = {
+  ENABLED: false,
+  SYMBOL: 'BTC/USDT',
+  TRADE_AMOUNT_USDT: 20,
+  HOLD_SECONDS: 30,
+  MAX_ROUNDS: 1,
+  USE_TESTNET: false,
+  LOG_LEVEL: 'verbose' as const,
+} as const;
+
+export const EXCHANGE = {
+  DEFAULT_ID: 'binance',
+  RATE_LIMIT: true,
+  MAX_RETRIES: 3,
+  RETRY_DELAY_MS: 2000,
+  RETRY_MULTIPLIER: 2,
+  TIMEOUT_MS: 30_000,
+  MIN_NOTIONAL_USDT: 10,
+} as const;
+
+export const RISK = {
+  MAX_DRAWDOWN_PCT: 5,
+  MAX_LEVERAGE: 10,
+  MAX_POSITION_SIZE_PCT: 10,
+  MAX_PORTFOLIO_EXPOSURE_PCT: 40,
+  MIN_CONFIDENCE: 0.6,
+  MAX_DAILY_LOSS_USDT: 5000,
+  MAX_POSITION_SIZE_BASE: 2.0,
+} as const;
+
+export const CIRCUIT_BREAKER = {
+  WARNING_DRAWDOWN_PCT: 3,
+  CRITICAL_DRAWDOWN_PCT: 5,
+  MAX_CONSECUTIVE_LOSSES: 5,
+  COOLDOWN_MS: 300_000,
+  VOLATILITY_THRESHOLD: 0.8,
+} as const;
+
+export const RECONCILIATION = {
+  INTERVAL_MS: 15_000,
+  DEFAULT_SYMBOLS: ['BTC/USDT', 'ETH/USDT'],
+} as const;
+
+export const FEE = {
+  SPOT_TAKER_PCT: 0.1,
+  SPOT_MAKER_PCT: 0.1,
+  PERFORMANCE_FEE_PCT: 2.0,
+} as const;
