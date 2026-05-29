@@ -1,0 +1,32 @@
+[
+  {
+    "id": "INV-1779556418898-783",
+    "timestamp": "2026-05-23T17:13:38.898Z",
+    "tradeId": "1002",
+    "symbol": "BTC/USDT",
+    "realizedProfit": 0.1,
+    "feePercentage": 2,
+    "feeAmountUsdt": 0.002,
+    "status": "unpaid"
+  },
+  {
+    "id": "INV-1779560167261-967",
+    "timestamp": "2026-05-23T18:16:07.261Z",
+    "tradeId": "1002",
+    "symbol": "BTC/USDT",
+    "realizedProfit": 0.1,
+    "feePercentage": 2,
+    "feeAmountUsdt": 0.002,
+    "status": "unpaid"
+  },
+  {
+    "id": "INV-1779561623775-470",
+    "timestamp": "2026-05-23T18:40:23.775Z",
+    "tradeId": "1002",
+    "symbol": "BTC/USDT",
+    "realizedProfit": 0.1,
+    "feePercentage": 2,
+    "feeAmountUsdt": 0.002,
+    "status": "unpaid"
+  }
+]

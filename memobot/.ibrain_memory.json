@@ -1,0 +1,157 @@
+[
+  {
+    "id": "kqlfeg",
+    "timestamp": "2026-05-28T23:53:01.203Z",
+    "type": "TRADE_OUTCOME",
+    "symbol": "BTC/USDT",
+    "data": {
+      "strategyId": "trend_following",
+      "pnl": -3540
+    },
+    "tags": [
+      "trend_following",
+      "LOSS"
+    ]
+  },
+  {
+    "id": "8jp5l",
+    "timestamp": "2026-05-28T23:53:06.208Z",
+    "type": "TRADE_OUTCOME",
+    "symbol": "BTC/USDT",
+    "data": {
+      "strategyId": "trend_following",
+      "pnl": -7557.091715371862
+    },
+    "tags": [
+      "trend_following",
+      "LOSS"
+    ]
+  },
+  {
+    "id": "0h254",
+    "timestamp": "2026-05-29T01:11:10.231Z",
+    "type": "TRADE_OUTCOME",
+    "symbol": "BTC/USDT",
+    "data": {
+      "strategyId": "trend_following",
+      "pnl": -3360
+    },
+    "tags": [
+      "trend_following",
+      "LOSS"
+    ]
+  },
+  {
+    "id": "ekkifnj",
+    "timestamp": "2026-05-29T01:11:15.242Z",
+    "type": "TRADE_OUTCOME",
+    "symbol": "BTC/USDT",
+    "data": {
+      "strategyId": "trend_following",
+      "pnl": -6592.1587563298235
+    },
+    "tags": [
+      "trend_following",
+      "LOSS"
+    ]
+  },
+  {
+    "id": "t1m7pm",
+    "timestamp": "2026-05-29T01:11:20.256Z",
+    "type": "TRADE_OUTCOME",
+    "symbol": "BTC/USDT",
+    "data": {
+      "strategyId": "trend_following",
+      "pnl": -9646.595164997838
+    },
+    "tags": [
+      "trend_following",
+      "LOSS"
+    ]
+  },
+  {
+    "id": "im5rji",
+    "timestamp": "2026-05-29T01:11:25.278Z",
+    "type": "TRADE_OUTCOME",
+    "symbol": "BTC/USDT",
+    "data": {
+      "strategyId": "trend_following",
+      "pnl": -12565.0101411684
+    },
+    "tags": [
+      "trend_following",
+      "LOSS"
+    ]
+  },
+  {
+    "id": "rens1i",
+    "timestamp": "2026-05-29T01:11:30.289Z",
+    "type": "TRADE_OUTCOME",
+    "symbol": "BTC/USDT",
+    "data": {
+      "strategyId": "trend_following",
+      "pnl": -15354.186317665124
+    },
+    "tags": [
+      "trend_following",
+      "LOSS"
+    ]
+  },
+  {
+    "id": "n3cuk9",
+    "timestamp": "2026-05-29T02:11:05.236Z",
+    "type": "OPTIMIZATION_CYCLE",
+    "symbol": "GLOBAL",
+    "data": {
+      "time": "2026-05-29T02:11:05.236Z",
+      "marketState": {
+        "volatility": 0.007900094559939135,
+        "trend": "SIDEWAYS",
+        "liquidity": 0.8554860238945965,
+        "momentumScore": 0,
+        "riskLevel": "LOW"
+      }
+    },
+    "tags": [
+      "OPTIMIZATION"
+    ]
+  },
+  {
+    "id": "ftjzm",
+    "timestamp": "2026-05-29T03:11:05.240Z",
+    "type": "OPTIMIZATION_CYCLE",
+    "symbol": "GLOBAL",
+    "data": {
+      "time": "2026-05-29T03:11:05.239Z",
+      "marketState": {
+        "volatility": 0.05172571916528107,
+        "trend": "BEARISH",
+        "liquidity": 0.9482705916583701,
+        "momentumScore": -0.8,
+        "riskLevel": "LOW"
+      }
+    },
+    "tags": [
+      "OPTIMIZATION"
+    ]
+  },
+  {
+    "id": "yb7nq",
+    "timestamp": "2026-05-29T04:11:05.256Z",
+    "type": "OPTIMIZATION_CYCLE",
+    "symbol": "GLOBAL",
+    "data": {
+      "time": "2026-05-29T04:11:05.256Z",
+      "marketState": {
+        "volatility": 0.032819634976299,
+        "trend": "BULLISH",
+        "liquidity": 0.8655903242187998,
+        "momentumScore": 0.8,
+        "riskLevel": "LOW"
+      }
+    },
+    "tags": [
+      "OPTIMIZATION"
+    ]
+  }
+]
