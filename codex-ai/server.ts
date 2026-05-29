@@ -249,7 +249,8 @@ async function startServer() {
     const files = readJSON<StoredFile[]>(projectFilesPath(req.params.projectId), []);
     const idx = files.findIndex(f => f.id === req.params.fileId);
     if (idx === -1) return res.status(404).json({ error: "File not found" });
-    files[idx] = { ...files[idx], ...req.body, updatedAt: new Date().toISOString() };
+    const { content, path: newPath, language } = req.body;
+    files[idx] = { ...files[idx], ...(content !== undefined && { content }), ...(newPath !== undefined && { path: newPath }), ...(language !== undefined && { language }), updatedAt: new Date().toISOString() };
     writeJSON(projectFilesPath(req.params.projectId), files);
     res.json({ file: files[idx] });
   });

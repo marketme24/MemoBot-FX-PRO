@@ -87,7 +87,7 @@ async function callAI(messages, options = {}) {
 const PROJECTS_DIR = path.join(__dirname, 'projects');
 if (!fs.existsSync(PROJECTS_DIR)) fs.mkdirSync(PROJECTS_DIR);
 
-let currentProject = 'memobot-fx-pro';
+const DEFAULT_PROJECT = 'memobot-fx-pro';
 let clients = new Map();
 
 function loadProjects() {
@@ -96,8 +96,14 @@ function loadProjects() {
   );
 }
 
-function getProjectPath(projectName = currentProject) {
+function getProjectPath(projectName = DEFAULT_PROJECT) {
   return path.join(PROJECTS_DIR, projectName);
+}
+
+function validatePath(fullPath, projectName) {
+  const projectRoot = path.resolve(getProjectPath(projectName));
+  const resolved = path.resolve(fullPath);
+  return resolved === projectRoot || resolved.startsWith(projectRoot + path.sep);
 }
 
 function ensureProject(projectName) {
@@ -115,9 +121,10 @@ function ensureProject(projectName) {
 const tools = {
   create_file: {
     description: 'Create a new file with content',
-    execute: (params) => {
+    execute: (params, projectName) => {
       const { path: filePath, content } = params;
-      const fullPath = path.join(getProjectPath(), filePath);
+      const fullPath = path.join(getProjectPath(projectName), filePath);
+      if (!validatePath(fullPath, projectName)) return { success: false, error: 'Access denied: path outside project directory' };
       const dir = path.dirname(fullPath);
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
       fs.writeFileSync(fullPath, content);
@@ -126,9 +133,10 @@ const tools = {
   },
   edit_file: {
     description: 'Edit an existing file',
-    execute: (params) => {
+    execute: (params, projectName) => {
       const { path: filePath, content } = params;
-      const fullPath = path.join(getProjectPath(), filePath);
+      const fullPath = path.join(getProjectPath(projectName), filePath);
+      if (!validatePath(fullPath, projectName)) return { success: false, error: 'Access denied: path outside project directory' };
       if (fs.existsSync(fullPath)) {
         fs.writeFileSync(fullPath, content);
         return { success: true, message: `Edited ${filePath}` };
@@ -138,9 +146,10 @@ const tools = {
   },
   delete_file: {
     description: 'Delete a file',
-    execute: (params) => {
+    execute: (params, projectName) => {
       const { path: filePath } = params;
-      const fullPath = path.join(getProjectPath(), filePath);
+      const fullPath = path.join(getProjectPath(projectName), filePath);
+      if (!validatePath(fullPath, projectName)) return { success: false, error: 'Access denied: path outside project directory' };
       if (fs.existsSync(fullPath)) {
         fs.unlinkSync(fullPath);
         return { success: true, message: `Deleted ${filePath}` };
@@ -150,9 +159,10 @@ const tools = {
   },
   list_files: {
     description: 'List files in a directory',
-    execute: (params) => {
+    execute: (params, projectName) => {
       const { directory = '' } = params;
-      const fullPath = path.join(getProjectPath(), directory);
+      const fullPath = path.join(getProjectPath(projectName), directory);
+      if (!validatePath(fullPath, projectName)) return { success: false, error: 'Access denied: path outside project directory' };
       if (fs.existsSync(fullPath)) {
         return { success: true, files: fs.readdirSync(fullPath) };
       }
@@ -161,9 +171,10 @@ const tools = {
   },
   read_file: {
     description: "Read a file's content",
-    execute: (params) => {
+    execute: (params, projectName) => {
       const { path: filePath } = params;
-      const fullPath = path.join(getProjectPath(), filePath);
+      const fullPath = path.join(getProjectPath(projectName), filePath);
+      if (!validatePath(fullPath, projectName)) return { success: false, error: 'Access denied: path outside project directory' };
       if (fs.existsSync(fullPath)) {
         return { success: true, content: fs.readFileSync(fullPath, 'utf-8') };
       }
@@ -172,11 +183,11 @@ const tools = {
   },
   execute_command: {
     description: 'Execute a shell command',
-    execute: async (params) => {
+    execute: async (params, projectName) => {
       const { command } = params;
       const { exec } = await import('child_process');
       return new Promise((resolve) => {
-        exec(command, { cwd: getProjectPath() }, (error, stdout, stderr) => {
+        exec(command, { cwd: getProjectPath(projectName) }, (error, stdout, stderr) => {
           resolve({ success: !error, output: stdout, error: stderr || error?.message });
         });
       });
@@ -184,7 +195,7 @@ const tools = {
   }
 };
 
-async function agenticAI(prompt, mode = 'flash') {
+async function agenticAI(prompt, mode = 'flash', projectName = DEFAULT_PROJECT) {
   const toolPatterns = [
     { pattern: /create (a|new) file/i, tool: 'create_file' },
     { pattern: /make (a|new) file/i, tool: 'create_file' },
@@ -226,7 +237,7 @@ async function agenticAI(prompt, mode = 'flash') {
         if (cmdMatch) params.command = cmdMatch[1];
       }
 
-      const result = await tools[tool].execute(params);
+      const result = await tools[tool].execute(params, projectName);
       return {
         type: 'tool_execution',
         tool: tool,
@@ -240,7 +251,7 @@ async function agenticAI(prompt, mode = 'flash') {
 
   // Use the provider-agnostic AI engine
   const messages = [
-    { role: 'system', content: `You are MEMOCODEX AI, an expert coding assistant supporting ALL programming languages. Be concise, helpful, and provide code examples when relevant. Current project: ${currentProject}` },
+    { role: 'system', content: `You are MEMOCODEX AI, an expert coding assistant supporting ALL programming languages. Be concise, helpful, and provide code examples when relevant. Current project: ${projectName}` },
     { role: 'user', content: prompt }
   ];
 
@@ -282,7 +293,8 @@ const wss = new WebSocketServer({ port: WS_PORT });
 
 wss.on('connection', (ws) => {
   const userId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
-  clients.set(userId, ws);
+  const clientState = { ws, currentProject: DEFAULT_PROJECT };
+  clients.set(userId, clientState);
   console.log(`[WS] Client connected: ${userId} (Total: ${clients.size})`);
 
   ws.send(JSON.stringify({
@@ -290,7 +302,7 @@ wss.on('connection', (ws) => {
     userId: userId,
     message: 'Neural Link Active — Open Source Edition',
     projects: loadProjects(),
-    currentProject: currentProject,
+    currentProject: clientState.currentProject,
     provider: activeProvider.name,
     timestamp: new Date().toISOString()
   }));
@@ -300,11 +312,14 @@ wss.on('connection', (ws) => {
       const data = JSON.parse(message);
 
       if (data.type === 'chat') {
-        const response = await agenticAI(data.prompt, data.mode || 'flash');
+        const response = await agenticAI(data.prompt, data.mode || 'flash', clientState.currentProject);
         ws.send(JSON.stringify({
           type: 'response',
           originalPrompt: data.prompt,
-          ...response,
+          innerType: response.type,
+          tool: response.tool,
+          result: response.result,
+          response: response.response,
           timestamp: new Date().toISOString()
         }));
       }
@@ -312,8 +327,8 @@ wss.on('connection', (ws) => {
       if (data.type === 'switch_project') {
         const projectPath = path.join(PROJECTS_DIR, data.project);
         if (fs.existsSync(projectPath)) {
-          currentProject = data.project;
-          ws.send(JSON.stringify({ type: 'project_switched', project: currentProject, timestamp: new Date().toISOString() }));
+          clientState.currentProject = data.project;
+          ws.send(JSON.stringify({ type: 'project_switched', project: clientState.currentProject, timestamp: new Date().toISOString() }));
         } else {
           ws.send(JSON.stringify({ type: 'error', message: `Project ${data.project} not found`, timestamp: new Date().toISOString() }));
         }
@@ -332,7 +347,7 @@ wss.on('connection', (ws) => {
           type: 'status',
           ai: `${activeProvider.name} (${activeProvider.model})`,
           projects: loadProjects(),
-          currentProject: currentProject,
+          currentProject: clientState.currentProject,
           uptime: process.uptime(),
           timestamp: new Date().toISOString()
         }));
@@ -369,7 +384,7 @@ app.get('/api/status', (req, res) => {
     ai: `${activeProvider.name} (${activeProvider.model})`,
     provider: activeProvider.name,
     projects: loadProjects(),
-    currentProject: currentProject,
+    currentProject: DEFAULT_PROJECT,
     connectedClients: clients.size,
     timestamp: new Date().toISOString()
   });
@@ -391,7 +406,7 @@ app.post('/api/configure', (req, res) => {
 });
 
 app.get('/api/projects', (req, res) => {
-  res.json({ projects: loadProjects(), current: currentProject });
+  res.json({ projects: loadProjects(), current: DEFAULT_PROJECT });
 });
 
 app.post('/api/projects/create', (req, res) => {
@@ -409,16 +424,16 @@ app.post('/api/projects/switch', (req, res) => {
   const { name } = req.body;
   const projectPath = path.join(PROJECTS_DIR, name);
   if (fs.existsSync(projectPath)) {
-    currentProject = name;
-    res.json({ success: true, project: currentProject });
+    res.json({ success: true, project: name });
   } else {
     res.json({ success: false, error: 'Project not found' });
   }
 });
 
 app.get('/api/files', (req, res) => {
-  const { path: filePath = '' } = req.query;
-  const fullPath = path.join(getProjectPath(), filePath);
+  const { path: filePath = '', project = DEFAULT_PROJECT } = req.query;
+  const fullPath = path.join(getProjectPath(project), filePath);
+  if (!validatePath(fullPath, project)) return res.status(403).json({ success: false, error: 'Access denied: path outside project directory' });
   if (fs.existsSync(fullPath)) {
     const stats = fs.statSync(fullPath);
     if (stats.isDirectory()) {
@@ -432,8 +447,9 @@ app.get('/api/files', (req, res) => {
 });
 
 app.post('/api/files/save', (req, res) => {
-  const { path: filePath, content } = req.body;
-  const fullPath = path.join(getProjectPath(), filePath);
+  const { path: filePath, content, project = DEFAULT_PROJECT } = req.body;
+  const fullPath = path.join(getProjectPath(project), filePath);
+  if (!validatePath(fullPath, project)) return res.status(403).json({ success: false, error: 'Access denied: path outside project directory' });
   const dir = path.dirname(fullPath);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(fullPath, content);
@@ -641,7 +657,7 @@ const uiHTML = `
     const chatArea = document.getElementById('chatArea');
     const div = document.createElement('div');
     div.className = 'message ' + (type === 'user' ? 'user-message' : (type === 'tool' ? 'tool-message' : 'ai-message'));
-    div.innerHTML = text.replace(/\\n/g, '<br>');
+    div.innerHTML = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\\n/g, '<br>');
     chatArea.appendChild(div);
     chatArea.scrollTop = chatArea.scrollHeight;
   }
