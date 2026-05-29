@@ -15,6 +15,13 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
+  // Stripe webhook MUST be registered before express.json() so the raw body
+  // is preserved for signature verification.
+  app.post("/api/webhooks/stripe", express.raw({type: 'application/json'}), (req, res) => {
+    console.log("STRIPE WEBHOOK RECEIVED");
+    res.json({ received: true });
+  });
+
   app.use(express.json());
 
   app.use(
@@ -27,12 +34,6 @@ async function startServer() {
 
   app.get("/api/settings", (req, res) => {
     res.json({ account: { profileName: "Maher Fekri" }, engine: "MEMOBOT-PRO" });
-  });
-
-  // Payment Webhooks
-  app.post("/api/webhooks/stripe", express.raw({type: 'application/json'}), (req, res) => {
-    console.log("STRIPE WEBHOOK RECEIVED");
-    res.json({ received: true });
   });
 
   app.post("/api/webhooks/telr", express.json(), (req, res) => {

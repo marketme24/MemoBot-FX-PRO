@@ -36,6 +36,9 @@ class EngineManager {
     if (existing && mode === 'real') {
        if (existing.status === 'error' || !existing.realEngine || apiKey) {
           try {
+            if (existing.realEngine) {
+              try { existing.realEngine.cleanup(); } catch(_e) { /* ignore */ }
+            }
             existing.realEngine = new RealEngine(exchange, apiKey || "mock_key", secret || "mock_secret");
           } catch(e: any) {
             console.error(`Failed to re-initialize real engine for ${id}:`, e);
@@ -184,8 +187,14 @@ class EngineManager {
     const bot = this.bots.find(b => b.id === id);
     if (bot) {
       bot.status = 'stopped';
-      if (bot.realEngine) bot.realEngine.isStarted = false;
-      if (bot.loopInterval) clearInterval(bot.loopInterval);
+      if (bot.realEngine) {
+        bot.realEngine.isStarted = false;
+        try { bot.realEngine.cleanup(); } catch(_e) { /* ignore */ }
+      }
+      if (bot.loopInterval) {
+        clearInterval(bot.loopInterval);
+        bot.loopInterval = undefined;
+      }
     }
   }
 
@@ -201,7 +210,7 @@ class EngineManager {
     const bot = this.bots.find(b => b.id === id);
     if (bot) {
       this.stopBot(id);
-      // Re-initialize engine
+      // Re-initialize engine (stopBot already cleaned up the previous realEngine)
       if (bot.mode === 'real') {
         try {
           bot.realEngine = new RealEngine(bot.exchange, apiKey || "mock_key", secret || "mock_secret");

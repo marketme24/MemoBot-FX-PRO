@@ -2,13 +2,21 @@ import { router, publicProcedure } from './_core/context';
 import { z } from 'zod';
 import ccxt from 'ccxt';
 import { engineManager, TradingMode } from './engine_manager';
+import { globalRiskEngine } from './risk_engine';
+import { circuitBreaker } from './circuit_breaker';
 
 let botLogs: any[] = [
    { id: 1, timestamp: new Date(Date.now() - 5000), message: 'System Initialized', level: 'info', mode: 'global' }
 ];
 
+const MAX_BOT_LOGS = 1000;
+function pushBotLog(entry: any) {
+   botLogs.unshift(entry);
+   if (botLogs.length > MAX_BOT_LOGS) botLogs.length = MAX_BOT_LOGS;
+}
+
 (global as any).addBotLog = (message: string, level: string, mode: string) => {
-   botLogs.unshift({ id: Math.random(), timestamp: new Date(), message, level, mode });
+   pushBotLog({ id: Math.random(), timestamp: new Date(), message, level, mode });
 };
 
 const userInvoicesMap = new Map<string, any[]>();
@@ -46,7 +54,7 @@ setInterval(() => {
          const side = Math.random() > 0.5 ? 'buy' : 'sell';
          try {
             bot.paperEngine.placeOrder(ticker.symbol, side, 'market', 0.01, ticker.price);
-            botLogs.unshift({ id: Math.random(), timestamp: new Date(), message: `[PAPER SIMULATION] EXECUTED: ${side.toUpperCase()} ${ticker.symbol} @ ${ticker.price.toFixed(2)}`, level: 'info', mode: 'paper' });
+            pushBotLog({ id: Math.random(), timestamp: new Date(), message: `[PAPER SIMULATION] EXECUTED: ${side.toUpperCase()} ${ticker.symbol} @ ${ticker.price.toFixed(2)}`, level: 'info', mode: 'paper' });
          } catch(e: any) {
             // Insufficient balance etc
          }
@@ -79,16 +87,20 @@ const globalBotSettings = {
 export const appRouter = router({
   admin: router({
     getUsers: publicProcedure.query(() => {
-      return Array.from((global as any).usersMap?.values() || [
-        { id: '1', name: 'Maher Fekri', email: 'maher@example.com', subscriptionPlan: 'elite', bots: [{ status: 'running' }], status: 'active', autoBilling: true, totalProfit: 450.21, owedFees: 0 },
-        { id: '2', name: 'Sarah Connor', email: 'sarah@example.com', subscriptionPlan: 'pro', bots: [{ status: 'stopped' }], status: 'suspended', autoBilling: false, totalProfit: -45.10, owedFees: 2.10 }
-      ]);
+      if (!(global as any).usersMap) {
+        (global as any).usersMap = new Map<string, any>([
+          ['1', { id: '1', name: 'Maher Fekri', email: 'maher@example.com', subscriptionPlan: 'elite', bots: [{ status: 'running' }], status: 'active', autoBilling: true, totalProfit: 450.21, owedFees: 0 }],
+          ['2', { id: '2', name: 'Sarah Connor', email: 'sarah@example.com', subscriptionPlan: 'pro', bots: [{ status: 'stopped' }], status: 'suspended', autoBilling: false, totalProfit: -45.10, owedFees: 2.10 }]
+        ]);
+      }
+      return Array.from(((global as any).usersMap as Map<string, any>).values());
     }),
     addUser: publicProcedure
       .input(z.object({ name: z.string(), email: z.string(), plan: z.string() }))
       .mutation(({ input }) => {
-        const usersMap = (global as any).usersMap || new Map([
-          ['1', { id: '1', name: 'Maher Fekri', email: 'maher@example.com', subscriptionPlan: 'elite', bots: [{ status: 'running' }], status: 'active' }]
+        const usersMap = (global as any).usersMap || new Map<string, any>([
+          ['1', { id: '1', name: 'Maher Fekri', email: 'maher@example.com', subscriptionPlan: 'elite', bots: [{ status: 'running' }], status: 'active', autoBilling: true, totalProfit: 450.21, owedFees: 0 }],
+          ['2', { id: '2', name: 'Sarah Connor', email: 'sarah@example.com', subscriptionPlan: 'pro', bots: [{ status: 'stopped' }], status: 'suspended', autoBilling: false, totalProfit: -45.10, owedFees: 2.10 }]
         ]);
         const id = Math.random().toString(36).substring(7);
         const newUser = { id, name: input.name, email: input.email, subscriptionPlan: input.plan, bots: [{ status: 'stopped' }], status: 'active' };
@@ -313,12 +325,35 @@ export const appRouter = router({
         
         if (!bot) throw new Error(`No ${input.mode} bot instance available`);
 
+        // Enforce circuit breaker and risk engine on manual trades too
+        if (!circuitBreaker.canTrade()) {
+           throw new Error(`Circuit breaker active: ${circuitBreaker.getStatus().state}`);
+        }
+
+        const refPrice = input.price || 65000;
+        const accountBalance = input.mode === 'paper'
+           ? (bot.paperEngine?.balance || 100000)
+           : (bot.realEngine?.balanceCache || 0);
+        const riskResult = globalRiskEngine.evaluateTrade({
+           symbol: input.symbol,
+           action: input.side.toUpperCase() as 'BUY' | 'SELL',
+           requestedSize: input.quantity * refPrice,
+           requestedLeverage: 1,
+           confidence: 0.7,
+           accountBalance,
+           openPositionsValue: 0,
+        });
+        if (!riskResult.approved) {
+           throw new Error(`Risk engine reject: ${riskResult.reason}`);
+        }
+        const finalQty = refPrice > 0 ? riskResult.modifiedSize / refPrice : input.quantity;
+
         if (input.mode === 'paper' && bot.paperEngine) {
-           bot.paperEngine.placeOrder(input.symbol, input.side, 'market', input.quantity, input.price || 65000);
-           botLogs.unshift({ id: Math.random(), timestamp: new Date(), message: `[PAPER SIMULATION] MANUAL: ${input.side.toUpperCase()} ${input.symbol}`, level: 'info', mode: 'paper' });
+           bot.paperEngine.placeOrder(input.symbol, input.side, 'market', finalQty, refPrice);
+           pushBotLog({ id: Math.random(), timestamp: new Date(), message: `[PAPER SIMULATION] MANUAL: ${input.side.toUpperCase()} ${input.symbol}`, level: 'info', mode: 'paper' });
         } else if (input.mode === 'real' && bot.realEngine) {
-           await bot.realEngine.placeOrder(input.symbol, input.side, 'market', input.quantity, input.price);
-           botLogs.unshift({ id: Math.random(), timestamp: new Date(), message: `[LIVE TRADE EXECUTED] MANUAL: ${input.side.toUpperCase()} ${input.symbol}`, level: 'success', mode: 'real' });
+           await bot.realEngine.placeOrder(input.symbol, input.side, 'market', finalQty, input.price);
+           pushBotLog({ id: Math.random(), timestamp: new Date(), message: `[LIVE TRADE EXECUTED] MANUAL: ${input.side.toUpperCase()} ${input.symbol}`, level: 'success', mode: 'real' });
         }
 
         return { success: true };
@@ -444,7 +479,7 @@ export const appRouter = router({
             engineManager.restartBot(`bot_${input.mode}`, input.apiKey, input.apiSecret);
          }
          
-         botLogs.unshift({ id: Math.random(), timestamp: new Date(), message: `Bot ${input.action} command received for mode ${input.mode}`, level: 'info', mode: input.mode });
+         pushBotLog({ id: Math.random(), timestamp: new Date(), message: `Bot ${input.action} command received for mode ${input.mode}`, level: 'info', mode: input.mode });
          const statusMap: any = { start: 'running', restart: 'running', stop: 'stopped', pause: 'paused' };
          return { success: true, status: statusMap[input.action] };
       }),

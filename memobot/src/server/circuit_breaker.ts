@@ -133,8 +133,18 @@ export class CircuitBreaker {
 
     if (newState === 'CRITICAL') {
       this.pausedUntil = Date.now() + this.config.cooldownMs;
+      const autoPauseReason = `Auto-pause after CRITICAL until ${new Date(this.pausedUntil).toISOString()}`;
+      this.eventLog.push({
+        timestamp: new Date().toISOString(),
+        fromState: 'CRITICAL',
+        toState: 'PAUSED',
+        reason: autoPauseReason,
+      });
+      if (this.eventLog.length > 500) {
+        this.eventLog = this.eventLog.slice(-500);
+      }
       this.state = 'PAUSED';
-      console.log(`[CIRCUIT_BREAKER] Auto-pause until ${new Date(this.pausedUntil).toISOString()}`);
+      console.log(`[CIRCUIT_BREAKER] ${autoPauseReason}`);
     }
   }
 

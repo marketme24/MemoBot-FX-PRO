@@ -35,6 +35,18 @@ export class PaperEngine {
       throw new Error("Insufficient paper balance");
     }
 
+    // Block naked shorts: SELL is only allowed up to currently held LONG size on that symbol.
+    if (side === 'sell') {
+      const longPos = this.positions.find(p => p.symbol === symbol && p.side === 'LONG');
+      const heldSize = longPos ? longPos.size : 0;
+      if (heldSize <= 0) {
+        throw new Error(`Cannot sell ${symbol}: no long position to close (naked shorts disabled)`);
+      }
+      if (size > heldSize) {
+        throw new Error(`Cannot sell ${size} ${symbol}: only ${heldSize} held`);
+      }
+    }
+
     const order: PaperOrder = {
       id: Math.random().toString(),
       symbol,

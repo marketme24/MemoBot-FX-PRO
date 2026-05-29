@@ -65,7 +65,7 @@ export class RealEngine {
   public orders: Order[] = [];
   public positions: Position[] = [];
   
-  private wsMarket: WebSocket | null = null;
+  private wsMarkets: Map<string, WebSocket> = new Map();
   private reconInterval: ReturnType<typeof setInterval> | null = null;
   public isStarted: boolean = true;
 
@@ -75,6 +75,7 @@ export class RealEngine {
   public maxPositionSize: number = RISK.MAX_POSITION_SIZE_BASE;
   public maxDailyLoss: number = RISK.MAX_DAILY_LOSS_USDT;
   public dailyRealizedPnl: number = 0;
+  private currentPnlDate: string = new Date().toISOString().slice(0, 10);
 
   private symbolPrecisionCache: Map<string, SymbolPrecision> = new Map();
   private isMockMode: boolean = false;
@@ -323,25 +324,30 @@ export class RealEngine {
   // --- Market WebSocket ---
 
   public subscribeMarketInfo(symbol: string) {
-    const formattedSymbol = symbol.toLowerCase().replace('/', '');
-    if (!this.wsMarket || this.wsMarket.readyState !== WebSocket.OPEN) {
-      this.wsMarket = new WebSocket(`wss://stream.binance.com:9443/ws/${formattedSymbol}@trade`);
-      this.wsMarket.on('message', (data: Buffer) => {
-        try {
-          const parsed = JSON.parse(data.toString());
-          if (parsed.e === 'trade') {
-            const price = parseFloat(parsed.p);
-            this.livePrices[symbol] = price;
-            this.updateUnrealizedPnl(symbol, price);
-          }
-        } catch (_e) { /* ignore parse errors on WS stream */ }
-      });
-      this.wsMarket.on('close', () => {
-        logger.engine('warn', `Market WS closed for ${symbol}, reconnecting...`);
-        setTimeout(() => { if (this.isStarted) { this.wsMarket = null; this.subscribeMarketInfo(symbol); } }, 5000);
-      });
-      this.wsMarket.on('error', (err) => logger.engine('error', `Market WS error for ${symbol}: ${err.message}`));
+    const existing = this.wsMarkets.get(symbol);
+    if (existing && (existing.readyState === WebSocket.OPEN || existing.readyState === WebSocket.CONNECTING)) {
+      return;
     }
+
+    const formattedSymbol = symbol.toLowerCase().replace('/', '');
+    const ws = new WebSocket(`wss://stream.binance.com:9443/ws/${formattedSymbol}@trade`);
+    this.wsMarkets.set(symbol, ws);
+    ws.on('message', (data: Buffer) => {
+      try {
+        const parsed = JSON.parse(data.toString());
+        if (parsed.e === 'trade') {
+          const price = parseFloat(parsed.p);
+          this.livePrices[symbol] = price;
+          this.updateUnrealizedPnl(symbol, price);
+        }
+      } catch (_e) { /* ignore parse errors on WS stream */ }
+    });
+    ws.on('close', () => {
+      logger.engine('warn', `Market WS closed for ${symbol}, reconnecting...`);
+      this.wsMarkets.delete(symbol);
+      setTimeout(() => { if (this.isStarted) this.subscribeMarketInfo(symbol); }, 5000);
+    });
+    ws.on('error', (err) => logger.engine('error', `Market WS error for ${symbol}: ${err.message}`));
   }
 
   // --- Position Management ---
@@ -455,9 +461,20 @@ export class RealEngine {
     return this.balanceCache || 0;
   }
 
+  private resetDailyPnlIfNewDay() {
+    const today = new Date().toISOString().slice(0, 10);
+    if (today !== this.currentPnlDate) {
+      logger.engine('info', `New day detected (${today}). Resetting daily PnL from ${this.dailyRealizedPnl.toFixed(2)} to 0.`);
+      this.dailyRealizedPnl = 0;
+      this.currentPnlDate = today;
+      circuitBreaker.resetDaily();
+    }
+  }
+
   async placeOrder(symbol: string, side: 'buy' | 'sell', type: 'market' | 'limit', size: number, price?: number): Promise<Order> {
     // Pre-flight checks
     if (!this.isStarted) throw new Error('Bot is paused/stopped.');
+    this.resetDailyPnlIfNewDay();
     if (this.dailyRealizedPnl < -this.maxDailyLoss) throw new Error('Max daily loss reached.');
     if (!circuitBreaker.canTrade()) throw new Error(`Circuit breaker active: ${circuitBreaker.getStatus().state}`);
 
@@ -603,7 +620,14 @@ export class RealEngine {
   }
 
   public cleanup() {
-    if (this.reconInterval) clearInterval(this.reconInterval);
-    if (this.wsMarket) this.wsMarket.close();
+    this.isStarted = false;
+    if (this.reconInterval) {
+      clearInterval(this.reconInterval);
+      this.reconInterval = null;
+    }
+    for (const ws of this.wsMarkets.values()) {
+      try { ws.close(); } catch (_e) { /* ignore */ }
+    }
+    this.wsMarkets.clear();
   }
 }
