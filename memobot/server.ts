@@ -5,6 +5,7 @@ import { createServer as createViteServer } from "vite";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { createContext } from "./src/server/_core/context";
 import { appRouter } from "./src/server/router";
+import ccxt from 'ccxt';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -33,7 +34,8 @@ async function startServer() {
   );
 
   app.get("/api/settings", (req, res) => {
-    res.json({ account: { profileName: "Maher Fekri" }, engine: "MEMOBOT-PRO" });
+    const profileName = process.env.PROFILE_NAME || 'Trader';
+    res.json({ account: { profileName }, engine: "MEMOBOT-PRO" });
   });
 
   app.post("/api/webhooks/telr", express.json(), (req, res) => {
@@ -45,14 +47,32 @@ async function startServer() {
     res.json({ plan: "pro", status: "active" });
   });
 
+  // Live price stream via Binance public API (no auth required)
   app.get("/api/prices/stream", (req, res) => {
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
-    const interval = setInterval(() => {
-      const data = JSON.stringify({ symbol: "BTCUSDT", price: (67000 + Math.random() * 100).toFixed(2) });
-      res.write(`data: ${data}\n\n`);
-    }, 2000);
+
+    const publicExchange = new ccxt.binance({ enableRateLimit: true });
+    let lastPrice = 0;
+
+    const fetchAndSend = async () => {
+      try {
+        const ticker = await publicExchange.fetchTicker('BTC/USDT');
+        lastPrice = ticker.last || lastPrice;
+        const data = JSON.stringify({ symbol: "BTCUSDT", price: lastPrice.toFixed(2) });
+        res.write(`data: ${data}\n\n`);
+      } catch (e) {
+        // On error, send last known price to keep stream alive
+        if (lastPrice > 0) {
+          const data = JSON.stringify({ symbol: "BTCUSDT", price: lastPrice.toFixed(2) });
+          res.write(`data: ${data}\n\n`);
+        }
+      }
+    };
+
+    fetchAndSend();
+    const interval = setInterval(fetchAndSend, 2000);
     req.on("close", () => clearInterval(interval));
   });
 

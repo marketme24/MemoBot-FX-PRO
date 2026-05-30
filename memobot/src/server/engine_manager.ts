@@ -97,12 +97,30 @@ class EngineManager {
          iBrain.updateMarketIntelligence(existing!.priceHistory, []);
        }
 
-       // Let the brain decide the direction based on the price history
-       // Use a default strategy ID; you can make it configurable per bot
+       // Evaluate both BUY and SELL directions, pick the stronger signal
        const strategyId = 'trend_following';
+
+       // Check if there's an open position that might need closing
+       let hasOpenLong = false;
+       if (existing!.mode === 'real' && existing!.realEngine) {
+         hasOpenLong = existing!.realEngine.positions.some(p => p.symbol === existing!.symbol && p.size > 0 && p.side === 'LONG');
+       } else if (existing!.mode === 'paper' && existing!.paperEngine) {
+         hasOpenLong = existing!.paperEngine.positions.some(p => p.symbol === existing!.symbol && p.size > 0 && p.side === 'LONG');
+       }
+
        const buyDecision = iBrain.evaluateTradeProposal(strategyId, existing!.symbol, 'BUY', existing!.priceHistory);
        const sellDecision = iBrain.evaluateTradeProposal(strategyId, existing!.symbol, 'SELL', existing!.priceHistory);
-       const decision = sellDecision.confidence > buyDecision.confidence ? sellDecision : buyDecision;
+
+       // If we have an open long position, prioritize SELL signals for exit
+       // Otherwise, pick the direction with highest confidence
+       let decision: import('./ibrain').TradeDecision;
+       if (hasOpenLong && sellDecision.action === 'SELL' && sellDecision.confidence >= 0.55) {
+         decision = sellDecision;
+       } else if (buyDecision.confidence >= sellDecision.confidence) {
+         decision = buyDecision;
+       } else {
+         decision = sellDecision;
+       }
        
        // Heartbeat log
        if ((global as any).addBotLog && decision.action !== 'HOLD') {
