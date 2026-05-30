@@ -57,13 +57,18 @@ export default function App() {
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (files.length > 0) {
-      const firstFile = files.find(f => f.type === "file");
-      if (firstFile) setSelectedFileId(firstFile.id);
-    } else {
+    if (files.length === 0) {
       setSelectedFileId(null);
+      return;
     }
-  }, [files]);
+    // Only auto-select a file if the current selection is missing/invalid.
+    // Otherwise leave the user's selection alone (prevents reset on every edit).
+    const stillExists = selectedFileId && files.some(f => f.id === selectedFileId);
+    if (!stillExists) {
+      const firstFile = files.find(f => f.type === "file");
+      setSelectedFileId(firstFile ? firstFile.id : null);
+    }
+  }, [files, selectedFileId]);
 
   const selectedFile = files.find(f => f.id === selectedFileId);
 
