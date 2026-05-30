@@ -99,20 +99,26 @@ class EngineManager {
 
        // Check if there's an open position that might need closing
        let hasOpenLong = false;
+       let hasOpenShort = false;
        if (existing!.mode === 'real' && existing!.realEngine) {
-         hasOpenLong = existing!.realEngine.positions.some(p => p.symbol === existing!.symbol && p.size > 0 && p.side === 'LONG');
+         const positions = existing!.realEngine.positions.filter(p => p.symbol === existing!.symbol && p.size > 0);
+         hasOpenLong = positions.some(p => p.side === 'LONG');
+         hasOpenShort = positions.some(p => p.side === 'SHORT');
        } else if (existing!.mode === 'paper' && existing!.paperEngine) {
-         hasOpenLong = existing!.paperEngine.positions.some(p => p.symbol === existing!.symbol && p.size > 0 && p.side === 'LONG');
+         const positions = existing!.paperEngine.positions.filter(p => p.symbol === existing!.symbol && p.size > 0);
+         hasOpenLong = positions.some(p => p.side === 'LONG');
+         hasOpenShort = positions.some(p => p.side === 'SHORT');
        }
 
        const buyDecision = iBrain.evaluateTradeProposal(strategyId, existing!.symbol, 'BUY', existing!.priceHistory);
        const sellDecision = iBrain.evaluateTradeProposal(strategyId, existing!.symbol, 'SELL', existing!.priceHistory);
 
-       // If we have an open long position, prioritize SELL signals for exit
-       // Otherwise, pick the direction with highest confidence
+       // Prioritize exit signals for open positions, otherwise pick strongest direction
        let decision: import('./ibrain').TradeDecision;
        if (hasOpenLong && sellDecision.action === 'SELL' && sellDecision.confidence >= 0.55) {
          decision = sellDecision;
+       } else if (hasOpenShort && buyDecision.action === 'BUY' && buyDecision.confidence >= 0.55) {
+         decision = buyDecision;
        } else if (buyDecision.confidence >= sellDecision.confidence) {
          decision = buyDecision;
        } else {

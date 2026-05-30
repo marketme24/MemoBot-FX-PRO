@@ -21,17 +21,28 @@ export interface PaperPosition {
   mode: 'paper';
 }
 
+export interface RealizedTrade {
+  symbol: string;
+  side: 'LONG' | 'SHORT';
+  entryPrice: number;
+  exitPrice: number;
+  size: number;
+  pnl: number;
+  timestamp: Date;
+}
+
 export class PaperEngine {
   public orders: PaperOrder[] = [];
   public positions: PaperPosition[] = [];
+  public realizedTrades: RealizedTrade[] = [];
   public balance: number = 100000;
-  public isStarted: boolean = true;                     // ✅ added for engine_manager
-  private currentPrices: Record<string, number> = {};   // ✅ added for getCurrentPrice
+  public isStarted: boolean = true;
+  private currentPrices: Record<string, number> = {};
 
   placeOrder(symbol: string, side: 'buy' | 'sell', type: 'market' | 'limit', size: number, price?: number): PaperOrder {
     const orderCost = (price || 1) * size;
     
-    if (side === 'buy' && this.balance < orderCost) {
+    if (this.balance < orderCost) {
       throw new Error("Insufficient paper balance");
     }
 
@@ -78,9 +89,19 @@ export class PaperEngine {
       pos.entryPrice = totalCost / pos.size;
     } else {
       // Closing/reducing position: credit proceeds and realize PnL
-      const pnl = (orderPrice - pos.entryPrice) * order.size * (pos.side === 'LONG' ? 1 : -1);
-      this.balance += pos.entryPrice * order.size + pnl;
-      pos.size -= order.size;
+      const closedSize = Math.min(order.size, pos.size);
+      const pnl = (orderPrice - pos.entryPrice) * closedSize * (pos.side === 'LONG' ? 1 : -1);
+      this.balance += pos.entryPrice * closedSize + pnl;
+      this.realizedTrades.push({
+        symbol: order.symbol,
+        side: pos.side,
+        entryPrice: pos.entryPrice,
+        exitPrice: orderPrice,
+        size: closedSize,
+        pnl,
+        timestamp: order.timestamp,
+      });
+      pos.size -= closedSize;
       if (pos.size <= 0) {
         this.positions = this.positions.filter(p => p.id !== pos.id);
       }

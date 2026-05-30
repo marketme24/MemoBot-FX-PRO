@@ -1,12 +1,41 @@
 import { router, publicProcedure, protectedProcedure, adminProcedure, createSession, invalidateSession } from './_core/context';
+import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import ccxt from 'ccxt';
+import crypto from 'crypto';
 import { engineManager, TradingMode } from './engine_manager';
 import { iBrain } from './ibrain';
 import { database } from './database';
 
 // Server-side API key storage (never sent to/from frontend)
 const apiKeyStore = new Map<string, { apiKey: string; apiSecret: string }>();
+
+// User credential store with hashed passwords
+interface StoredUser {
+  id: string;
+  email: string;
+  passwordHash: string;
+  role: 'admin' | 'user';
+}
+
+function hashPassword(password: string): string {
+  return crypto.createHash('sha256').update(password).digest('hex');
+}
+
+const userStore = new Map<string, StoredUser>();
+
+// Seed admin user from environment or use default for initial setup
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@memobot.local';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+if (ADMIN_PASSWORD) {
+  const adminId = crypto.randomUUID();
+  userStore.set(ADMIN_EMAIL, {
+    id: adminId,
+    email: ADMIN_EMAIL,
+    passwordHash: hashPassword(ADMIN_PASSWORD),
+    role: 'admin',
+  });
+}
 
 export function setApiKeys(userId: string, apiKey: string, apiSecret: string) {
   apiKeyStore.set(userId, { apiKey, apiSecret });
@@ -94,19 +123,49 @@ export const appRouter = router({
     login: publicProcedure
       .input(z.object({ email: z.string().email(), password: z.string().min(1) }))
       .mutation(({ input }) => {
-        // In production, validate against hashed passwords in database
-        // For now, validate against known admin email
-        const isAdmin = input.email === 'maher.fekri1978@gmail.com' || input.email.includes('admin');
-        const userId = Math.random().toString(36).substring(7);
-        const role = isAdmin ? 'admin' as const : 'user' as const;
-        const token = createSession(userId, input.email, role);
+        const user = userStore.get(input.email);
+        if (!user || user.passwordHash !== hashPassword(input.password)) {
+          throw new TRPCError({
+            code: 'UNAUTHORIZED',
+            message: 'Invalid email or password.',
+          });
+        }
+        const token = createSession(user.id, user.email, user.role);
+        return {
+          token,
+          user: {
+            id: user.id,
+            email: user.email,
+            name: user.email.split('@')[0],
+            role: user.role,
+          }
+        };
+      }),
+    register: publicProcedure
+      .input(z.object({ email: z.string().email(), password: z.string().min(8) }))
+      .mutation(({ input }) => {
+        if (userStore.has(input.email)) {
+          throw new TRPCError({
+            code: 'CONFLICT',
+            message: 'User already exists.',
+          });
+        }
+        const userId = crypto.randomUUID();
+        const user: StoredUser = {
+          id: userId,
+          email: input.email,
+          passwordHash: hashPassword(input.password),
+          role: 'user',
+        };
+        userStore.set(input.email, user);
+        const token = createSession(userId, input.email, 'user');
         return {
           token,
           user: {
             id: userId,
             email: input.email,
             name: input.email.split('@')[0],
-            role,
+            role: 'user' as const,
           }
         };
       }),
@@ -281,18 +340,11 @@ export const appRouter = router({
 
         for (const b of bots) {
            if (mode === 'paper' && b.paperEngine) {
-              const orders = b.paperEngine.orders;
-              totalTrades += orders.length;
+              totalTrades += b.paperEngine.realizedTrades.length;
               totalPnL += b.paperEngine.balance - 100000;
-              // Compute win/loss from closed orders
-              let runningBalance = 100000;
-              for (const order of orders) {
-                const cost = (order.price || 0) * order.size;
-                if (order.side === 'sell') {
-                  const pnl = cost - cost; // approximation from order history
-                  if (pnl >= 0) { wins++; totalWinPnl += pnl; }
-                  else { losses++; totalLossPnl += Math.abs(pnl); }
-                }
+              for (const trade of b.paperEngine.realizedTrades) {
+                if (trade.pnl >= 0) { wins++; totalWinPnl += trade.pnl; }
+                else { losses++; totalLossPnl += Math.abs(trade.pnl); }
               }
            } else if (mode === 'real' && b.realEngine) {
               totalTrades += b.realEngine.orders.length;
