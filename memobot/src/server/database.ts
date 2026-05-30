@@ -98,7 +98,11 @@ class Database {
     this.saveDebounce = setTimeout(() => {
       try {
         this.state.metadata.lastUpdated = new Date().toISOString();
-        fs.writeFileSync(DB_PATH, JSON.stringify(this.state, null, 2));
+        const data = JSON.stringify(this.state, null, 2);
+        // Atomic write: write to temp file then rename to prevent corruption
+        const tmpPath = DB_PATH + '.tmp';
+        fs.writeFileSync(tmpPath, data);
+        fs.renameSync(tmpPath, DB_PATH);
       } catch (e) {
         console.error('[DATABASE] Failed to persist state:', e);
       }

@@ -37,8 +37,10 @@ export class BacktestingEngine {
             
             iBrain.updateMarketIntelligence(currentSlice, volumeSlice);
             
-            const direction = Math.random() > 0.5 ? 'BUY' : 'SELL';
-            const decision = iBrain.evaluateTradeProposal(config.strategyId, config.symbol, direction, currentSlice);
+            // Evaluate both directions and pick the stronger signal
+            const buyDecision = iBrain.evaluateTradeProposal(config.strategyId, config.symbol, 'BUY', currentSlice);
+            const sellDecision = iBrain.evaluateTradeProposal(config.strategyId, config.symbol, 'SELL', currentSlice);
+            const decision = buyDecision.confidence >= sellDecision.confidence ? buyDecision : sellDecision;
 
             // Same risk override logic applied to backtesting (Non-negotiable requirement)
             const riskResult = globalRiskEngine.evaluateTrade({
