@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import socket, { joinProject } from "./socket";
 
 export interface Project {
   id: string;
@@ -46,6 +47,28 @@ export function useProject() {
         setFiles(data.files || []);
         setLoading(false);
       });
+
+    // Join the project room and subscribe to real-time updates.
+    joinProject(project.id);
+    const onUpdated = (data: { fileId: string; content: string; path?: string }) => {
+      setFiles(prev => prev.map(f => (f.id === data.fileId
+        ? { ...f, content: data.content, ...(data.path ? { path: data.path } : {}) }
+        : f)));
+    };
+    const onCreated = (data: { file: FileNode }) => {
+      setFiles(prev => prev.some(f => f.id === data.file.id) ? prev : [...prev, data.file]);
+    };
+    const onDeleted = (data: { fileId: string }) => {
+      setFiles(prev => prev.filter(f => f.id !== data.fileId));
+    };
+    socket.on("file-updated", onUpdated);
+    socket.on("file-created", onCreated);
+    socket.on("file-deleted", onDeleted);
+    return () => {
+      socket.off("file-updated", onUpdated);
+      socket.off("file-created", onCreated);
+      socket.off("file-deleted", onDeleted);
+    };
   }, [project]);
 
   const createProject = async (name: string) => {

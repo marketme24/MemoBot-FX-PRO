@@ -1,14 +1,20 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import { Terminal as TerminalIcon, X } from "lucide-react";
 
-export const Terminal = () => {
+interface TerminalProps {
+  projectId?: string;
+}
+
+export const Terminal = ({ projectId }: TerminalProps) => {
+  const sessionId = useMemo(() => `term_${Math.random().toString(36).slice(2)}`, []);
   const [logs, setLogs] = useState<string[]>([
-    "MEMOCODEX AI v1.2.0 initialized.",
-    "Kernel: 6.5.0-generic-x86_64",
-    "Sandbox: Node.js v20.x active.",
-    "Ready for execution. Type 'help' for commands."
+    "MEMOCODEX AI Terminal — connected to real shell.",
+    "Working directory is your project's materialized workdir.",
+    "Type 'help' for tips, or any shell command (ls, cat, node, python3, ...)."
   ]);
   const [input, setInput] = useState("");
+  const [cwd, setCwd] = useState("");
+  const [busy, setBusy] = useState(false);
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -19,70 +25,49 @@ export const Terminal = () => {
     }
   }, [logs]);
 
-  const handleCommand = (e: React.FormEvent) => {
+  const handleCommand = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim()) return;
+    if (!input.trim() || busy) return;
 
-    const cmd = input.trim().toLowerCase();
-    const args = cmd.split(' ');
-    const baseCmd = args[0];
-
-    setLogs(prev => [...prev, `> ${input.trim()}`]);
-    setHistory(prev => [input.trim(), ...prev]);
+    const raw = input.trim();
+    setLogs(prev => [...prev, `> ${raw}`]);
+    setHistory(prev => [raw, ...prev]);
     setHistoryIndex(-1);
-    
-    // Simulate command execution
-    setTimeout(() => {
-      switch (baseCmd) {
-        case 'clear':
-          setLogs([]);
-          break;
-        case 'help':
-          setLogs(prev => [...prev, 
-            "Available commands:",
-            "  help      - Show this help message",
-            "  clear     - Clear the terminal",
-            "  ls        - List files in current directory",
-            "  whoami    - Show current user",
-            "  date      - Show current date",
-            "  echo      - Print text to terminal",
-            "  status    - Check system status",
-            "  build     - Compile current project",
-            "  run       - Execute main entry point"
-          ]);
-          break;
-        case 'ls':
-          setLogs(prev => [...prev, "main.py  app.ts  styles.css  package.json"]);
-          break;
-        case 'whoami':
-          setLogs(prev => [...prev, "architect@memocodex-ai"]);
-          break;
-        case 'date':
-          setLogs(prev => [...prev, new Date().toString()]);
-          break;
-        case 'echo':
-          setLogs(prev => [...prev, args.slice(1).join(' ')]);
-          break;
-        case 'status':
-          setLogs(prev => [...prev, 
-            "System: ONLINE",
-            "Neural Link: ACTIVE",
-            "Database: CONNECTED",
-            "Latency: 24ms"
-          ]);
-          break;
-        case 'build':
-          setLogs(prev => [...prev, "Building project...", "Compiling TypeScript...", "Optimizing assets...", "Build SUCCESSFUL."]);
-          break;
-        case 'run':
-          setLogs(prev => [...prev, "Starting execution...", "Output: Hello from MEMOCODEX AI", "Process exited with code 0."]);
-          break;
-        default:
-          setLogs(prev => [...prev, `Command '${baseCmd}' not found. Type 'help' for available commands.`]);
-      }
-    }, 100);
-
     setInput("");
+
+    if (raw.toLowerCase() === "clear") {
+      setLogs([]);
+      return;
+    }
+    if (raw.toLowerCase() === "help") {
+      setLogs(prev => [...prev,
+        "This is a REAL shell scoped to your project workdir.",
+        "  clear  — clear the screen (client-side)",
+        "  cd DIR — change working directory (server-side, persistent)",
+        "  Anything else is exec'd via /bin/sh with a 15s timeout."
+      ]);
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const res = await fetch("/api/terminal/exec", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ command: raw, sessionId, projectId }),
+      });
+      const data = await res.json();
+      if (data.cwd) setCwd(data.cwd);
+      const out = [data.stdout, data.stderr].filter(Boolean).join("").replace(/\n$/, "");
+      if (out) setLogs(prev => [...prev, ...out.split("\n")]);
+      if (typeof data.exitCode === "number" && data.exitCode !== 0 && !out) {
+        setLogs(prev => [...prev, `(exit ${data.exitCode})`]);
+      }
+    } catch (err) {
+      setLogs(prev => [...prev, `Error: ${String(err)}`]);
+    } finally {
+      setBusy(false);
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -128,13 +113,16 @@ export const Terminal = () => {
       </div>
       <form onSubmit={handleCommand} className="p-2 bg-zinc-900/30 flex items-center gap-2">
         <span className="text-cyan-500">➜</span>
-        <input 
+        {cwd && <span className="text-zinc-500 truncate max-w-[200px]" title={cwd}>{cwd.split("/").slice(-2).join("/")}</span>}
+        <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          className="flex-1 bg-transparent border-none outline-none text-zinc-200"
+          disabled={busy}
+          className="flex-1 bg-transparent border-none outline-none text-zinc-200 disabled:opacity-50"
           autoFocus
         />
+        {busy && <span className="text-cyan-500 animate-pulse">…</span>}
       </form>
     </div>
   );

@@ -7,6 +7,7 @@ import path from "path";
 import fs from "fs";
 import cors from "cors";
 import { v4 as uuidv4 } from "uuid";
+import { exec, spawn } from "child_process";
 
 // ============================================================
 // PROVIDER-AGNOSTIC AI ENGINE
@@ -132,6 +133,24 @@ function writeJSON(filePath: string, data: unknown) {
 function projectMetaPath(projectId: string) { return path.join(PROJECTS_DIR, projectId, "meta.json"); }
 function projectFilesPath(projectId: string) { return path.join(PROJECTS_DIR, projectId, "files.json"); }
 function projectMessagesPath(projectId: string) { return path.join(PROJECTS_DIR, projectId, "messages.json"); }
+function projectWorkdir(projectId: string) { return path.join(PROJECTS_DIR, projectId, "workdir"); }
+
+// Materialize the JSON-stored files into a real directory so a real shell /
+// real interpreters can see them. Called on every save/exec.
+function materializeProjectFiles(projectId: string) {
+  const files = readJSON<StoredFile[]>(projectFilesPath(projectId), []);
+  const workdir = projectWorkdir(projectId);
+  ensureDir(workdir);
+  for (const f of files) {
+    if (f.type === "folder") continue;
+    // Prevent path traversal — only allow paths inside the workdir.
+    const target = path.resolve(workdir, f.path);
+    if (!target.startsWith(path.resolve(workdir) + path.sep) && target !== path.resolve(workdir)) continue;
+    ensureDir(path.dirname(target));
+    fs.writeFileSync(target, f.content);
+  }
+  return workdir;
+}
 
 function getAllProjects(): StoredProject[] {
   ensureDir(PROJECTS_DIR);
@@ -243,6 +262,8 @@ async function startServer() {
     const newFile: StoredFile = { id: uuidv4(), projectId: req.params.projectId, path: filePath, content: content || "", language: language || "plaintext", type: type || "file", updatedAt: new Date().toISOString() };
     files.push(newFile);
     writeJSON(projectFilesPath(req.params.projectId), files);
+    materializeProjectFiles(req.params.projectId);
+    io.to(req.params.projectId).emit("file-created", { file: newFile });
     res.json({ file: newFile });
   });
 
@@ -253,6 +274,8 @@ async function startServer() {
     const { content, path: newPath, language } = req.body;
     files[idx] = { ...files[idx], ...(content !== undefined && { content }), ...(newPath !== undefined && { path: newPath }), ...(language !== undefined && { language }), updatedAt: new Date().toISOString() };
     writeJSON(projectFilesPath(req.params.projectId), files);
+    materializeProjectFiles(req.params.projectId);
+    io.to(req.params.projectId).emit("file-updated", { fileId: files[idx].id, content: files[idx].content, path: files[idx].path });
     res.json({ file: files[idx] });
   });
 
@@ -260,6 +283,7 @@ async function startServer() {
     let files = readJSON<StoredFile[]>(projectFilesPath(req.params.projectId), []);
     files = files.filter(f => f.id !== req.params.fileId);
     writeJSON(projectFilesPath(req.params.projectId), files);
+    io.to(req.params.projectId).emit("file-deleted", { fileId: req.params.fileId });
     res.json({ success: true });
   });
 
@@ -279,15 +303,86 @@ async function startServer() {
     res.json({ message: msg });
   });
 
-  // ---- Sandbox (mock) ----
+  // ---- Sandbox (REAL execution) ----
+  // WARNING: This runs arbitrary code on the host. Only run on trusted machines.
 
-  app.post("/api/sandbox/run", (req, res) => {
-    const { code, language } = req.body;
-    if (language === "javascript" || language === "typescript") {
-      res.json({ output: `Executed ${language} code successfully.\nResult: Simulated output for code snippet.` });
-    } else {
-      res.json({ output: `Execution for ${language} is currently simulated in the sandbox.` });
+  const LANG_RUNNERS: Record<string, { cmd: string; ext: string; args?: (file: string) => string[] }> = {
+    javascript: { cmd: "node", ext: "js" },
+    typescript: { cmd: "npx", ext: "ts", args: (f) => ["tsx", f] },
+    python:     { cmd: "python3", ext: "py" },
+    bash:       { cmd: "bash", ext: "sh" },
+    sh:         { cmd: "sh", ext: "sh" },
+    ruby:       { cmd: "ruby", ext: "rb" },
+    go:         { cmd: "go", ext: "go", args: (f) => ["run", f] },
+  };
+
+  app.post("/api/sandbox/run", async (req, res) => {
+    const { code, language, projectId } = req.body as { code: string; language: string; projectId?: string };
+    const runner = LANG_RUNNERS[(language || "").toLowerCase()];
+    if (!runner) {
+      return res.json({ output: `No runner configured for "${language}". Supported: ${Object.keys(LANG_RUNNERS).join(", ")}` });
     }
+    const workdir = projectId ? materializeProjectFiles(projectId) : path.join(DATA_DIR, "scratch");
+    ensureDir(workdir);
+    const tmpFile = path.join(workdir, `__run_${Date.now()}.${runner.ext}`);
+    fs.writeFileSync(tmpFile, code);
+    const args = runner.args ? runner.args(tmpFile) : [tmpFile];
+    const child = spawn(runner.cmd, args, { cwd: workdir });
+    let stdout = "", stderr = "";
+    const killer = setTimeout(() => child.kill("SIGKILL"), 15_000);
+    child.stdout.on("data", (d) => { stdout += d.toString(); });
+    child.stderr.on("data", (d) => { stderr += d.toString(); });
+    child.on("close", (code) => {
+      clearTimeout(killer);
+      try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
+      res.json({ exitCode: code, stdout, stderr, output: (stdout + (stderr ? "\n" + stderr : "")) || `(exit ${code})` });
+    });
+    child.on("error", (err) => {
+      clearTimeout(killer);
+      res.json({ exitCode: -1, stdout: "", stderr: String(err), output: `Failed to launch ${runner.cmd}: ${String(err)}` });
+    });
+  });
+
+  // ---- Real Terminal Exec ----
+  // Each session keeps its own cwd on the server.
+  const terminalSessions = new Map<string, { cwd: string }>();
+
+  app.post("/api/terminal/exec", (req, res) => {
+    const { command, sessionId, projectId } = req.body as { command: string; sessionId: string; projectId?: string };
+    if (!command || !sessionId) return res.status(400).json({ error: "command and sessionId are required" });
+
+    let session = terminalSessions.get(sessionId);
+    if (!session) {
+      const baseCwd = projectId ? materializeProjectFiles(projectId) : path.join(DATA_DIR, "scratch");
+      ensureDir(baseCwd);
+      session = { cwd: baseCwd };
+      terminalSessions.set(sessionId, session);
+    } else if (projectId) {
+      // Keep workdir fresh with the latest file contents.
+      materializeProjectFiles(projectId);
+    }
+
+    const trimmed = command.trim();
+
+    // Handle `cd` ourselves so cwd persists across exec calls.
+    if (trimmed.startsWith("cd ") || trimmed === "cd") {
+      const target = trimmed === "cd" ? session.cwd : trimmed.slice(3).trim();
+      const next = path.resolve(session.cwd, target);
+      if (!fs.existsSync(next) || !fs.statSync(next).isDirectory()) {
+        return res.json({ stdout: "", stderr: `cd: no such directory: ${target}\n`, exitCode: 1, cwd: session.cwd });
+      }
+      session.cwd = next;
+      return res.json({ stdout: "", stderr: "", exitCode: 0, cwd: session.cwd });
+    }
+
+    exec(trimmed, { cwd: session.cwd, timeout: 15_000, maxBuffer: 5 * 1024 * 1024 }, (err, stdout, stderr) => {
+      res.json({
+        stdout: String(stdout || ""),
+        stderr: String(stderr || (err && !stdout ? err.message : "")),
+        exitCode: err ? (err as NodeJS.ErrnoException).code ?? 1 : 0,
+        cwd: session!.cwd,
+      });
+    });
   });
 
   // ---- Socket.io for real-time collaboration ----

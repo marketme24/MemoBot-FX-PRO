@@ -14,8 +14,9 @@ import { Preview } from "./components/Preview";
 import { SettingsModal } from "./components/SettingsModal";
 import { Analytics } from "./components/Analytics";
 import { cn } from "./lib/utils";
-import { Zap } from "lucide-react";
+import { Zap, X } from "lucide-react";
 import { useProject, FileNode } from "./lib/useProject";
+import { aiChat } from "./lib/ai";
 
 const ResizeHandle = ({ direction = "horizontal" }: { direction?: "horizontal" | "vertical" }) => (
   <PanelResizeHandle className={cn(
@@ -47,6 +48,8 @@ export default function App() {
   } = useProject();
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [auditResult, setAuditResult] = useState<{ file: string; output: string } | null>(null);
+  const [auditing, setAuditing] = useState(false);
   const [viewState, setViewState] = useState<ViewState>({
     fileTree: true,
     editor: true,
@@ -174,13 +177,25 @@ export default function App() {
                                     </div>
                                     {selectedFile && (
                                       <button
-                                        onClick={() => {
-                                          alert("AI Auditor initialized. Reviewing " + selectedFile.path + "...");
+                                        onClick={async () => {
+                                          if (auditing) return;
+                                          setAuditing(true);
+                                          setAuditResult({ file: selectedFile.path, output: "Reviewing…" });
+                                          try {
+                                            const prompt = `Review the following ${selectedFile.language} file named ${selectedFile.path}. Identify bugs, security issues, and suggest concrete improvements. Be terse and use bullet points.\n\n\`\`\`${selectedFile.language}\n${selectedFile.content}\n\`\`\``;
+                                            const text = await aiChat(prompt, "You are an expert senior code reviewer.", "pro");
+                                            setAuditResult({ file: selectedFile.path, output: text });
+                                          } catch (err) {
+                                            setAuditResult({ file: selectedFile.path, output: `Error: ${String(err)}` });
+                                          } finally {
+                                            setAuditing(false);
+                                          }
                                         }}
-                                        className="flex items-center gap-1.5 px-2 py-1 bg-cyan-500/10 border border-cyan-500/30 rounded text-[10px] font-bold text-cyan-400 hover:bg-cyan-500/20 transition-all"
+                                        disabled={auditing}
+                                        className="flex items-center gap-1.5 px-2 py-1 bg-cyan-500/10 border border-cyan-500/30 rounded text-[10px] font-bold text-cyan-400 hover:bg-cyan-500/20 transition-all disabled:opacity-50"
                                       >
                                         <Zap size={12} />
-                                        AUDIT CODE
+                                        {auditing ? "AUDITING…" : "AUDIT CODE"}
                                       </button>
                                     )}
                                   </div>
@@ -205,7 +220,11 @@ export default function App() {
                                 <div className="flex items-center gap-2 mb-2 px-2">
                                   <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Visualizer</span>
                                 </div>
-                                <Preview />
+                                <Preview
+                                  activeFile={selectedFile ? { path: selectedFile.path, content: selectedFile.content, language: selectedFile.language } : undefined}
+                                  allFiles={files.map(f => ({ path: f.path, content: f.content }))}
+                                  projectId={project?.id}
+                                />
                               </Panel>
                             )}
                           </PanelGroup>
@@ -217,7 +236,7 @@ export default function App() {
                     {viewState.terminal && (
                       <Panel defaultSize={30} minSize={10} className="flex flex-col p-4 pt-2">
                         <div className="h-full border border-zinc-800 rounded-lg overflow-hidden">
-                          <Terminal />
+                          <Terminal projectId={project?.id} />
                         </div>
                       </Panel>
                     )}
@@ -253,6 +272,18 @@ export default function App() {
           <span>All Languages</span>
         </div>
       </footer>
+
+      {auditResult && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/70 p-4" onClick={() => setAuditResult(null)}>
+          <div className="bg-zinc-900 border border-cyan-500/30 rounded-lg max-w-2xl w-full max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-3 border-b border-zinc-800">
+              <span className="text-sm font-bold text-cyan-400">AI Audit — {auditResult.file}</span>
+              <button onClick={() => setAuditResult(null)} className="text-zinc-500 hover:text-white"><X size={16} /></button>
+            </div>
+            <pre className="flex-1 overflow-auto p-4 text-xs text-zinc-200 whitespace-pre-wrap font-mono">{auditResult.output}</pre>
+          </div>
+        </div>
+      )}
 
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
     </div>
