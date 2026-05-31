@@ -43,7 +43,7 @@ npm run dev
 ```
 
 **F. Login Details:**
-- **Access:** http://localhost:3000
+- **Access:** http://localhost:5000
 - **Default Admin:** admin@memobot.com
 - **Default PIN:** `1234` (Used for App Lock and switching to LIVE Mode)
 

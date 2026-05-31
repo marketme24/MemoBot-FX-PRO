@@ -14,7 +14,8 @@ export type AppRouter = typeof appRouter;
 
 async function startServer() {
   const app = express();
-  const PORT = parseInt(process.env.PORT || '5000', 10);
+  const parsed = parseInt(process.env.PORT || '5000', 10);
+  const PORT = isNaN(parsed) ? 5000 : parsed;
 
   app.use(express.json());
 
