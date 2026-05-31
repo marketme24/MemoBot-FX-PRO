@@ -29,7 +29,7 @@ function atomicWrite(filePath: string, data: string) {
 }
 
 // --- AES-256 encryption for API key storage at rest ---
-const ENCRYPTION_KEY = process.env.API_KEY_ENCRYPTION_KEY || crypto.createHash('sha256').update(process.env.ADMIN_PASSWORD || 'memobot-default-key').digest();
+const ENCRYPTION_KEY = crypto.createHash('sha256').update(process.env.API_KEY_ENCRYPTION_KEY || process.env.ADMIN_PASSWORD || 'memobot-default-key').digest();
 
 function encryptValue(plaintext: string): string {
   const iv = crypto.randomBytes(16);
