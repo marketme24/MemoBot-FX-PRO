@@ -62,10 +62,10 @@ api = APIRouter(prefix="/api")
 
 
 # Configure CORS. Because we use credentials, we can't use "*".
-frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:5000")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[frontend_url, "http://localhost:3000"],
+    allow_origins=[frontend_url, "http://localhost:5000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
