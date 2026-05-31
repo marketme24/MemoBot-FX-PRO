@@ -30,7 +30,7 @@ export default function ManualTrading({ mode = 'real' }: { mode?: 'real' | 'pape
   const { settings } = useSettings();
   const isLive = mode === 'real';
   const { data: realBalanceData } = trpc.trading.getRealBalance.useQuery(
-    { apiKey: settings.exchange.binanceApiKey, apiSecret: settings.exchange.binanceApiSecret },
+    undefined,
     { enabled: !!settings.exchange.binanceApiKey && isLive }
   );
   const { data: positions } = trpc.trading.positions.useQuery({ mode: isLive ? 'real' : 'paper' });

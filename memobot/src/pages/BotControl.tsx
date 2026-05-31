@@ -177,7 +177,7 @@ export default function BotControl() {
                     onCheckedChange={async (val) => {
                       if (val) {
                         toast("Enabling REAL trading mode...");
-                        controlMut.mutate({ action: "start", mode: "real", apiKey: settings.exchange.binanceApiKey, apiSecret: settings.exchange.binanceApiSecret });
+                        controlMut.mutate({ action: "start", mode: "real" });
                       } else {
                         controlMut.mutate({ action: "stop", mode: "real" });
                       }
@@ -235,11 +235,11 @@ export default function BotControl() {
            if (uiMode === 'real') {
              toast("Starting REAL trading bot...");
            }
-           controlMut.mutate({ action: "start", mode: uiMode || 'paper', symbol: 'BTC/USDT', apiKey: settings.exchange.binanceApiKey, apiSecret: settings.exchange.binanceApiSecret });
+           controlMut.mutate({ action: "start", mode: uiMode || 'paper', symbol: 'BTC/USDT' });
         }} disabled={status === "running"} icon={<Play />} label={t("startBot")} variant="success" active={botRunning} />
         <ControlBtn onClick={() => controlMut.mutate({ action: "stop", mode: uiMode || 'paper' })} disabled={status === "stopped"} icon={<Square />} label={t("stopBot")} variant="danger" />
         <ControlBtn onClick={() => controlMut.mutate({ action: "pause", mode: uiMode || 'paper' })} disabled={status !== "running"} icon={<Pause />} label={t("pauseBot")} variant="warning" />
-        <ControlBtn onClick={() => controlMut.mutate({ action: "restart", mode: uiMode || 'paper', symbol: 'BTC/USDT', apiKey: settings.exchange.binanceApiKey, apiSecret: settings.exchange.binanceApiSecret })} icon={<RotateCcw />} label={t("restartBot")} variant="primary" />
+        <ControlBtn onClick={() => controlMut.mutate({ action: "restart", mode: uiMode || 'paper', symbol: 'BTC/USDT' })} icon={<RotateCcw />} label={t("restartBot")} variant="primary" />
       </div>
 
       <div className="bg-black/60 border border-white/5 rounded-2xl p-6 shadow-2xl">

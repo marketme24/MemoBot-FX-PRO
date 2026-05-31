@@ -92,7 +92,10 @@ export class IBrainSystem {
 
   private saveMemory() {
     try {
-      fs.writeFileSync(this.memoryStoreFile, JSON.stringify(this.memories, null, 2));
+      const data = JSON.stringify(this.memories, null, 2);
+      const tmpFile = this.memoryStoreFile + '.tmp';
+      fs.writeFileSync(tmpFile, data);
+      fs.renameSync(tmpFile, this.memoryStoreFile);
       this.state.memoryStats.totalMemories = this.memories.length;
     } catch(e) {
       console.error("Failed to save I-Brain memory", e);
@@ -120,32 +123,63 @@ export class IBrainSystem {
   // --- 2. Market Intelligence Layer ---
 
   public updateMarketIntelligence(prices: number[], volumes: number[]) {
-    // Simulate complex analysis on price time-series
     if (prices.length < 2) return;
     
-    const latest = prices[prices.length -1];
-    const prev = prices[0];
-    
-    // Volatility calculation (mocked for simplicity)
-    const stdDev = Math.abs(latest - prev) / prev;
-    const volatility = Math.min(1, stdDev * 10);
-    
-    // Trend
+    const latest = prices[prices.length - 1];
+
+    // Real standard deviation volatility over available window
+    const window = Math.min(prices.length, 20);
+    const slice = prices.slice(-window);
+    const returns: number[] = [];
+    for (let i = 1; i < slice.length; i++) {
+      returns.push((slice[i] - slice[i - 1]) / slice[i - 1]);
+    }
+    const meanReturn = returns.reduce((a, b) => a + b, 0) / returns.length;
+    const variance = returns.reduce((s, r) => s + (r - meanReturn) ** 2, 0) / returns.length;
+    const stdDev = Math.sqrt(variance);
+    const volatility = Math.min(1, stdDev * 100);
+
+    // Trend detection using SMA crossover (short vs long window)
+    const smaShort = this.calculateSMA(prices, Math.min(10, prices.length));
+    const smaLong = this.calculateSMA(prices, Math.min(50, prices.length));
     let trend: MarketState['trend'] = 'SIDEWAYS';
-    if (latest > prev * 1.001) trend = 'BULLISH';
-    else if (latest < prev * 0.999) trend = 'BEARISH';
+    const trendThreshold = smaLong * 0.001;
+    if (smaShort > smaLong + trendThreshold) trend = 'BULLISH';
+    else if (smaShort < smaLong - trendThreshold) trend = 'BEARISH';
     
     // Risk Detection
     let riskLevel: MarketState['riskLevel'] = 'LOW';
     if (volatility > 0.8) riskLevel = 'EXTREME';
     else if (volatility > 0.5) riskLevel = 'HIGH';
     else if (volatility > 0.3) riskLevel = 'MEDIUM';
-    
+
+    // Volume-based liquidity (if volume data provided, else derive from price spread)
+    let liquidity = 0.5;
+    if (volumes.length >= 2) {
+      const recentVols = volumes.slice(-window);
+      const avgVol = recentVols.reduce((a, b) => a + b, 0) / recentVols.length;
+      const maxVol = Math.max(...recentVols);
+      liquidity = maxVol > 0 ? Math.min(1, avgVol / maxVol) : 0.5;
+    } else {
+      // Estimate from bid-ask proxy: tighter price changes = higher liquidity
+      const absReturns = returns.map(Math.abs);
+      const avgAbsReturn = absReturns.reduce((a, b) => a + b, 0) / absReturns.length;
+      liquidity = Math.min(1, Math.max(0.1, 1 - avgAbsReturn * 50));
+    }
+
+    // Momentum score based on rate-of-change and RSI
+    const rsi = this.calculateRSI(prices, Math.min(14, prices.length - 1));
+    const rsiNormalized = (rsi - 50) / 50; // -1 to +1
+    const roc = prices.length >= 10
+      ? (latest - prices[prices.length - Math.min(10, prices.length)]) / prices[prices.length - Math.min(10, prices.length)]
+      : 0;
+    const momentumScore = Math.min(1, Math.max(-1, (rsiNormalized * 0.6 + roc * 40 * 0.4)));
+
     this.state.marketIntel = {
       volatility,
       trend,
-      liquidity: Math.random() * 0.2 + 0.8, // Fake high liquidity
-      momentumScore: trend === 'BULLISH' ? 0.8 : trend === 'BEARISH' ? -0.8 : 0,
+      liquidity,
+      momentumScore,
       riskLevel
     };
   }
@@ -153,22 +187,44 @@ export class IBrainSystem {
   // --- 3. Strategy Intelligence Layer ---
   
   private initializeStrategies() {
-    this.state.strategyStates['trend_following'] = {
-      strategyId: 'trend_following',
-      winRate: 0.65,
-      profitFactor: 1.5,
-      recentTradesCount: 120,
-      adaptiveWeight: 1.0,
-      currentState: 'OPTIMIZED'
+    // Initialize with neutral baseline values — real performance
+    // will be calibrated via reportTradeOutcome() as trades execute
+    const strategies: Record<string, StrategyPerformance> = {
+      trend_following: {
+        strategyId: 'trend_following',
+        winRate: 0.50,
+        profitFactor: 1.0,
+        recentTradesCount: 0,
+        adaptiveWeight: 1.0,
+        currentState: 'EVALUATING'
+      },
+      mean_reversion: {
+        strategyId: 'mean_reversion',
+        winRate: 0.50,
+        profitFactor: 1.0,
+        recentTradesCount: 0,
+        adaptiveWeight: 0.8,
+        currentState: 'EVALUATING'
+      }
     };
-    this.state.strategyStates['mean_reversion'] = {
-      strategyId: 'mean_reversion',
-      winRate: 0.58,
-      profitFactor: 1.2,
-      recentTradesCount: 80,
-      adaptiveWeight: 0.8,
-      currentState: 'EVALUATING'
-    };
+
+    // Restore strategy stats from memory if available
+    const tradeMemories = this.memories.filter(m => m.type === 'TRADE_OUTCOME');
+    for (const [id, strat] of Object.entries(strategies)) {
+      const stratTrades = tradeMemories.filter(m => m.tags.includes(id));
+      if (stratTrades.length > 0) {
+        const wins = stratTrades.filter(m => m.tags.includes('WIN')).length;
+        strat.winRate = wins / stratTrades.length;
+        strat.recentTradesCount = stratTrades.length;
+        strat.currentState = strat.winRate > 0.6 ? 'OPTIMIZED' : strat.winRate < 0.4 ? 'DEGRADED' : 'EVALUATING';
+
+        const totalWinPnl = stratTrades.filter(m => m.data?.pnl > 0).reduce((s, m) => s + m.data.pnl, 0);
+        const totalLossPnl = Math.abs(stratTrades.filter(m => m.data?.pnl < 0).reduce((s, m) => s + m.data.pnl, 0));
+        strat.profitFactor = totalLossPnl > 0 ? totalWinPnl / totalLossPnl : totalWinPnl > 0 ? 2.0 : 1.0;
+      }
+    }
+
+    this.state.strategyStates = strategies;
   }
 
   public reportTradeOutcome(strategyId: string, pnl: number, symbol: string) {

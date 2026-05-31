@@ -71,6 +71,7 @@ export class RealEngine {
 
   private livePrices: Record<string, number> = {};
   public balanceCache: number = 0;
+  public get cachedBalance(): number { return this.balanceCache; }
   
   public maxPositionSize: number = RISK.MAX_POSITION_SIZE_BASE;
   public maxDailyLoss: number = RISK.MAX_DAILY_LOSS_USDT;
@@ -196,10 +197,10 @@ export class RealEngine {
   
   private saveState() {
     try {
-      fs.writeFileSync(DB_FILE, JSON.stringify({
-        orders: this.orders, 
-        positions: this.positions,
-      }));
+      const data = JSON.stringify({ orders: this.orders, positions: this.positions });
+      const tmpFile = DB_FILE + '.tmp';
+      fs.writeFileSync(tmpFile, data);
+      fs.renameSync(tmpFile, DB_FILE);
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
       logger.error(`Failed to save RealEngine state: ${message}`);
@@ -463,7 +464,7 @@ export class RealEngine {
 
     const pos = this.positions.find((p) => p.symbol === symbol);
     const currentSize = pos ? pos.size : 0;
-    if (side === 'buy' && currentSize + size > this.maxPositionSize) {
+    if (currentSize + size > this.maxPositionSize) {
       throw new Error(`Size exceeds max position ${this.maxPositionSize}`);
     }
 
@@ -484,10 +485,10 @@ export class RealEngine {
       }
     }
 
-    // Balance check for buys
-    if (side === 'buy' && symbol.endsWith('USDT')) {
-      const cost = formattedSize * (estPrice || 65000);
-      if (this.balanceCache > 0 && cost > this.balanceCache) {
+    // Balance check for all order sides (buy or sell-short require margin/balance)
+    if (estPrice > 0 && this.balanceCache > 0) {
+      const cost = formattedSize * estPrice;
+      if (cost > this.balanceCache) {
         throw new Error(`Insufficient balance. Need ${cost.toFixed(2)}, have ${this.balanceCache.toFixed(2)}`);
       }
     }

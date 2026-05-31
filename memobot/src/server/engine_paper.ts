@@ -21,17 +21,28 @@ export interface PaperPosition {
   mode: 'paper';
 }
 
+export interface RealizedTrade {
+  symbol: string;
+  side: 'LONG' | 'SHORT';
+  entryPrice: number;
+  exitPrice: number;
+  size: number;
+  pnl: number;
+  timestamp: Date;
+}
+
 export class PaperEngine {
   public orders: PaperOrder[] = [];
   public positions: PaperPosition[] = [];
+  public realizedTrades: RealizedTrade[] = [];
   public balance: number = 100000;
-  public isStarted: boolean = true;                     // ✅ added for engine_manager
-  private currentPrices: Record<string, number> = {};   // ✅ added for getCurrentPrice
+  public isStarted: boolean = true;
+  private currentPrices: Record<string, number> = {};
 
   placeOrder(symbol: string, side: 'buy' | 'sell', type: 'market' | 'limit', size: number, price?: number): PaperOrder {
     const orderCost = (price || 1) * size;
     
-    if (side === 'buy' && this.balance < orderCost) {
+    if (this.balance < orderCost) {
       throw new Error("Insufficient paper balance");
     }
 
@@ -47,40 +58,52 @@ export class PaperEngine {
       timestamp: new Date()
     };
     
-    if (side === 'buy') {
-      this.balance -= orderCost;
-    } else {
-      this.balance += orderCost;
-    }
-
     this.orders.push(order);
     this.updatePosition(order);
     return order;
   }
 
   private updatePosition(order: PaperOrder) {
+    const orderPrice = order.price || 0;
     const pos = this.positions.find(p => p.symbol === order.symbol);
     if (!pos) {
+      // Opening a new position: deduct cost from balance
+      this.balance -= orderPrice * order.size;
       this.positions.push({
         id: Math.random().toString(),
         symbol: order.symbol,
         side: order.side === 'buy' ? 'LONG' : 'SHORT',
         size: order.size,
-        entryPrice: order.price || 0,
+        entryPrice: orderPrice,
         unrealizedPnl: 0,
         mode: 'paper'
       });
+    } else if (
+      (pos.side === 'LONG' && order.side === 'buy') ||
+      (pos.side === 'SHORT' && order.side === 'sell')
+    ) {
+      // Adding to existing position: deduct cost, update avg entry
+      this.balance -= orderPrice * order.size;
+      const totalCost = pos.entryPrice * pos.size + orderPrice * order.size;
+      pos.size += order.size;
+      pos.entryPrice = totalCost / pos.size;
     } else {
-      if (
-        (pos.side === 'LONG' && order.side === 'buy') ||
-        (pos.side === 'SHORT' && order.side === 'sell')
-      ) {
-        pos.size += order.size;
-      } else {
-        pos.size -= order.size;
-        if (pos.size <= 0) {
-          this.positions = this.positions.filter(p => p.id !== pos.id);
-        }
+      // Closing/reducing position: credit proceeds and realize PnL
+      const closedSize = Math.min(order.size, pos.size);
+      const pnl = (orderPrice - pos.entryPrice) * closedSize * (pos.side === 'LONG' ? 1 : -1);
+      this.balance += pos.entryPrice * closedSize + pnl;
+      this.realizedTrades.push({
+        symbol: order.symbol,
+        side: pos.side,
+        entryPrice: pos.entryPrice,
+        exitPrice: orderPrice,
+        size: closedSize,
+        pnl,
+        timestamp: order.timestamp,
+      });
+      pos.size -= closedSize;
+      if (pos.size <= 0) {
+        this.positions = this.positions.filter(p => p.id !== pos.id);
       }
     }
   }

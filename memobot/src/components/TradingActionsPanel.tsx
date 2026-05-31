@@ -21,7 +21,7 @@ export function TradingActionsPanel({ mode }: { mode?: 'real' | 'paper' }) {
   const { data: user } = trpc.admin.getProfile.useQuery(); // Or wherever balance is available
   const { settings } = useSettings();
   const { data: realBalanceData } = trpc.trading.getRealBalance.useQuery(
-    { apiKey: settings.exchange.binanceApiKey, apiSecret: settings.exchange.binanceApiSecret },
+    undefined,
     { enabled: !!settings.exchange.binanceApiKey }
   );
 
