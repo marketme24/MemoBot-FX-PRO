@@ -84,7 +84,7 @@ export default function SettingsPage() {
               <Button onClick={() => toast.success(t('settingsSaved' as any))} className="bg-blue-600 hover:bg-blue-700 text-[10px] font-black uppercase tracking-widest flex-1">
                 Save API
               </Button>
-              <Button onClick={() => testConnMut.mutate({ apiKey: settings.exchange.binanceApiKey, apiSecret: settings.exchange.binanceApiSecret })} disabled={testConnMut.isPending} variant="outline" className="border-blue-500/20 text-primary hover:bg-blue-500/10 text-[10px] font-black uppercase tracking-widest">
+              <Button onClick={() => testConnMut.mutate()} disabled={testConnMut.isPending} variant="outline" className="border-blue-500/20 text-primary hover:bg-blue-500/10 text-[10px] font-black uppercase tracking-widest">
                 {testConnMut.isPending ? t('testing' as any) : t('testAuth' as any)}
               </Button>
             </div>

@@ -63,13 +63,11 @@ export default function Dashboard({ mode }: { mode?: 'real' | 'paper' }) {
   const { data: bot } = trpc.bot.status.useQuery({ mode: 'real' });
   const { data: positions } = trpc.trading.positions.useQuery({ mode: 'real' });
   const { data: orders } = trpc.trading.orders.useQuery({ 
-     mode: 'real',
-     apiKey: settings.exchange.binanceApiKey,
-     apiSecret: settings.exchange.binanceApiSecret
+     mode: 'real'
   });
   const { data: equity } = trpc.analytics.equityCurve.useQuery({ mode: 'real' });
   const { data: realBalanceData, isLoading: isRealBalanceLoading } = trpc.trading.getRealBalance.useQuery(
-    { apiKey: settings.exchange.binanceApiKey, apiSecret: settings.exchange.binanceApiSecret },
+    undefined,
     { enabled: !!settings.exchange.binanceApiKey }
   );
   const { data: ibrainState } = trpc.ibrain.getState.useQuery(undefined, { refetchInterval: 5000 });

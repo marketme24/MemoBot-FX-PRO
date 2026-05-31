@@ -9,6 +9,8 @@ import path from 'path';
 import { engineManager, TradingMode } from './engine_manager';
 import { iBrain } from './ibrain';
 import { database } from './database';
+import { globalRiskEngine } from './risk_engine';
+import { BinanceWS } from './binance_ws';
 
 // --- Persistent store file paths ---
 const DATA_DIR = path.join(process.cwd(), 'data');
@@ -26,22 +28,59 @@ function atomicWrite(filePath: string, data: string) {
   fs.renameSync(tmp, filePath);
 }
 
-// --- Persistent API key storage ---
+// --- AES-256 encryption for API key storage at rest ---
+const ENCRYPTION_KEY = process.env.API_KEY_ENCRYPTION_KEY || crypto.createHash('sha256').update(process.env.ADMIN_PASSWORD || 'memobot-default-key').digest();
+
+function encryptValue(plaintext: string): string {
+  const iv = crypto.randomBytes(16);
+  const cipher = crypto.createCipheriv('aes-256-cbc', ENCRYPTION_KEY, iv);
+  let encrypted = cipher.update(plaintext, 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+  return iv.toString('hex') + ':' + encrypted;
+}
+
+function decryptValue(ciphertext: string): string {
+  const [ivHex, encrypted] = ciphertext.split(':');
+  if (!ivHex || !encrypted) return ciphertext; // legacy unencrypted value
+  try {
+    const iv = Buffer.from(ivHex, 'hex');
+    const decipher = crypto.createDecipheriv('aes-256-cbc', ENCRYPTION_KEY, iv);
+    let decrypted = decipher.update(encrypted, 'hex', 'utf8');
+    decrypted += decipher.final('utf8');
+    return decrypted;
+  } catch {
+    return ciphertext; // fallback for legacy unencrypted data
+  }
+}
+
+// --- Persistent API key storage (encrypted at rest) ---
 interface ApiKeyEntry { apiKey: string; apiSecret: string; }
+interface EncryptedApiKeyEntry { apiKey: string; apiSecret: string; encrypted?: boolean; }
 const apiKeyStore = new Map<string, ApiKeyEntry>();
 
 function loadApiKeys() {
   try {
     if (fs.existsSync(API_KEYS_FILE)) {
-      const entries: Record<string, ApiKeyEntry> = JSON.parse(fs.readFileSync(API_KEYS_FILE, 'utf-8'));
-      for (const [k, v] of Object.entries(entries)) apiKeyStore.set(k, v);
+      const entries: Record<string, EncryptedApiKeyEntry> = JSON.parse(fs.readFileSync(API_KEYS_FILE, 'utf-8'));
+      for (const [k, v] of Object.entries(entries)) {
+        if (v.encrypted) {
+          apiKeyStore.set(k, { apiKey: decryptValue(v.apiKey), apiSecret: decryptValue(v.apiSecret) });
+        } else {
+          // Migrate unencrypted keys — will be re-saved encrypted
+          apiKeyStore.set(k, v);
+        }
+      }
+      // Re-save to encrypt any legacy plaintext entries
+      saveApiKeys();
     }
   } catch { /* start fresh */ }
 }
 
 function saveApiKeys() {
-  const obj: Record<string, ApiKeyEntry> = {};
-  for (const [k, v] of apiKeyStore.entries()) obj[k] = v;
+  const obj: Record<string, EncryptedApiKeyEntry> = {};
+  for (const [k, v] of apiKeyStore.entries()) {
+    obj[k] = { apiKey: encryptValue(v.apiKey), apiSecret: encryptValue(v.apiSecret), encrypted: true };
+  }
   atomicWrite(API_KEYS_FILE, JSON.stringify(obj, null, 2));
 }
 
@@ -137,22 +176,49 @@ let botLogs: any[] = [
 const userInvoicesMap = new Map<string, any[]>();
 
 let tickers = [
-  { symbol: 'BTC/USDT', price: 67432.50, change24h: '+2.4', high24h: 68000, low24h: 65000, volume: '45.2K' },
-  { symbol: 'ETH/USDT', price: 3452.10, change24h: '-1.2', high24h: 3500, low24h: 3400, volume: '240K' },
-  { symbol: 'SOL/USDT', price: 145.20, change24h: '+5.6', high24h: 150, low24h: 135, volume: '1.2M' }
+  { symbol: 'BTC/USDT', price: 0, change24h: '0', high24h: 0, low24h: 0, volume: '0' },
+  { symbol: 'ETH/USDT', price: 0, change24h: '0', high24h: 0, low24h: 0, volume: '0' },
+  { symbol: 'SOL/USDT', price: 0, change24h: '0', high24h: 0, low24h: 0, volume: '0' }
 ];
+
+// Subscribe to real Binance WS prices and update tickers
+BinanceWS.onPrice((rawSymbol: string, price: number) => {
+  const symbolMap: Record<string, string> = { BTCUSDT: 'BTC/USDT', ETHUSDT: 'ETH/USDT', SOLUSDT: 'SOL/USDT' };
+  const mappedSymbol = symbolMap[rawSymbol];
+  if (mappedSymbol) {
+    const ticker = tickers.find(t => t.symbol === mappedSymbol);
+    if (ticker) {
+      const oldPrice = ticker.price;
+      ticker.price = price;
+      if (oldPrice > 0) {
+        const changePct = ((price - oldPrice) / oldPrice) * 100;
+        ticker.change24h = (changePct >= 0 ? '+' : '') + changePct.toFixed(2);
+      }
+      if (price > ticker.high24h || ticker.high24h === 0) ticker.high24h = price;
+      if (price < ticker.low24h || ticker.low24h === 0) ticker.low24h = price;
+    }
+  }
+});
 
 // Initialize default paper bot for the dashboard to always have something
 engineManager.startBot('bot_paper', 'Bot paper', 'paper', 'binance', 'BTC/USDT');
 
-setInterval(() => {
-  // Simulate Market Data Service
-  tickers.forEach(ticker => {
-    const volatility = ticker.price * 0.001;
-    const change = (Math.random() - 0.5) * volatility;
-    ticker.price += change;
-  });
+// Initial price fetch via REST for tickers that don't have WS data yet
+(async () => {
+  try {
+    const publicExchange = new ccxt.binance({ enableRateLimit: true });
+    const [btc, eth, sol] = await Promise.all([
+      publicExchange.fetchTicker('BTC/USDT').catch(() => null),
+      publicExchange.fetchTicker('ETH/USDT').catch(() => null),
+      publicExchange.fetchTicker('SOL/USDT').catch(() => null),
+    ]);
+    if (btc?.last) { const t = tickers.find(x => x.symbol === 'BTC/USDT'); if (t) { t.price = btc.last; t.high24h = btc.high || t.high24h; t.low24h = btc.low || t.low24h; } }
+    if (eth?.last) { const t = tickers.find(x => x.symbol === 'ETH/USDT'); if (t) { t.price = eth.last; t.high24h = eth.high || t.high24h; t.low24h = eth.low || t.low24h; } }
+    if (sol?.last) { const t = tickers.find(x => x.symbol === 'SOL/USDT'); if (t) { t.price = sol.last; t.high24h = sol.high || t.high24h; t.low24h = sol.low || t.low24h; } }
+  } catch { /* WS will fill in prices */ }
+})();
 
+setInterval(() => {
   // Update Paper Engine prices
   const paperBots = engineManager.getBotsByMode('paper');
   for (const bot of paperBots) {
@@ -164,6 +230,40 @@ setInterval(() => {
   // Paper bots now rely on the engine_manager strategy loop for trade decisions.
   // Removed random trade injection that was polluting analytics.
 }, 3000);
+
+// --- Daily midnight reset for PnL tracking & circuit breaker ---
+import { circuitBreaker } from './circuit_breaker';
+import { evaluationStateMachine } from './state_machine';
+
+function scheduleMidnightReset() {
+  const now = new Date();
+  const nextMidnight = new Date(now);
+  nextMidnight.setUTCHours(24, 0, 0, 0);
+  const msUntilMidnight = nextMidnight.getTime() - now.getTime();
+
+  setTimeout(() => {
+    console.log('[SCHEDULER] Midnight UTC reset: clearing daily PnL and circuit breaker.');
+    circuitBreaker.resetDaily();
+    // Reset daily realized PnL on all real engines
+    for (const bot of engineManager.getBotsByMode('real')) {
+      if (bot.realEngine) bot.realEngine.dailyRealizedPnl = 0;
+    }
+    // Cleanup stale state machine evaluations
+    evaluationStateMachine.cleanup();
+    // Reschedule for next midnight
+    scheduleMidnightReset();
+  }, msUntilMidnight);
+}
+scheduleMidnightReset();
+
+// Periodic state machine cleanup (every 5 minutes)
+setInterval(() => evaluationStateMachine.cleanup(), 5 * 60 * 1000);
+
+// Initialize portfolio exposure from existing positions
+engineManger_initPortfolio();
+function engineManger_initPortfolio() {
+  try { engineManager.initPortfolioFromPositions(); } catch { /* no positions yet */ }
+}
 
 // --- Global risk config (mutable via risk.updateConfig) ---
 const globalRiskConfig = {
@@ -272,10 +372,14 @@ export const appRouter = router({
   }),
   admin: router({
     getUsers: adminProcedure.query(() => {
-      return Array.from((global as any).usersMap?.values() || [
-        { id: '1', name: 'Maher Fekri', email: 'maher@example.com', subscriptionPlan: 'elite', bots: [{ status: 'running' }], status: 'active', autoBilling: true, totalProfit: 450.21, owedFees: 0 },
-        { id: '2', name: 'Sarah Connor', email: 'sarah@example.com', subscriptionPlan: 'pro', bots: [{ status: 'stopped' }], status: 'suspended', autoBilling: false, totalProfit: -45.10, owedFees: 2.10 }
-      ]);
+      return Array.from(userStore.values()).map(u => ({
+        id: u.id,
+        name: u.email.split('@')[0],
+        email: u.email,
+        role: u.role,
+        status: 'active',
+        hasApiKeys: apiKeyStore.has(u.id),
+      }));
     }),
     addUser: adminProcedure
       .input(z.object({ name: z.string(), email: z.string(), plan: z.string() }))
@@ -323,8 +427,16 @@ export const appRouter = router({
       }),
     getProfile: protectedProcedure.query(() => {
        const pb = engineManager.getBotsByMode('paper')[0]?.paperEngine?.balance || 0;
+       // Fetch real balance from the live engine's cached balance
+       let liveBalance = 0;
+       const realBots = engineManager.getBotsByMode('real');
+       for (const bot of realBots) {
+         if (bot.realEngine) {
+           liveBalance += bot.realEngine.cachedBalance || 0;
+         }
+       }
        return {
-         liveBalance: "0.00",
+         liveBalance: liveBalance.toFixed(2),
          paperBalance: pb.toFixed(2)
        }
     }),
@@ -354,7 +466,7 @@ export const appRouter = router({
       })
   }),
   ai: router({
-    getMarketVerdict: publicProcedure
+    getMarketVerdict: protectedProcedure
       .input(z.object({ symbol: z.string(), lang: z.string().optional() }))
       .query(() => {
         const intel = iBrain.state.marketIntel;
@@ -375,7 +487,7 @@ export const appRouter = router({
           reasons
         };
       }),
-    getPortfolioOptimization: publicProcedure
+    getPortfolioOptimization: protectedProcedure
       .input(z.object({ lang: z.string().optional() }))
       .query(() => {
         const intel = iBrain.state.marketIntel;
@@ -399,16 +511,16 @@ export const appRouter = router({
       })
   }),
   ibrain: router({
-    getState: publicProcedure.query(() => {
+    getState: protectedProcedure.query(() => {
       return iBrain.state;
     }),
-    runOptimization: publicProcedure.mutation(() => {
+    runOptimization: protectedProcedure.mutation(() => {
        iBrain.runOptimizationCycle();
        return { success: true };
     })
   }),
   analytics: router({
-    performance: publicProcedure
+    performance: protectedProcedure
       .input(z.object({ mode: z.enum(['real', 'paper']).optional() }).optional())
       .query(({ input }) => {
         const mode = input?.mode || 'paper';
@@ -454,18 +566,46 @@ export const appRouter = router({
         const profitFactor = totalLossPnl > 0 ? totalWinPnl / totalLossPnl : totalWinPnl > 0 ? 999 : 0;
         const averageWin = wins > 0 ? totalWinPnl / wins : 0;
 
+        // Compute Sharpe ratio from equity time-series
+        const snapshots = database.getBalanceHistory(100);
+        let sharpeRatio = 0;
+        if (snapshots.length >= 2) {
+          const returns: number[] = [];
+          for (let i = 1; i < snapshots.length; i++) {
+            const r = (snapshots[i].totalEquity - snapshots[i - 1].totalEquity) / snapshots[i - 1].totalEquity;
+            returns.push(r);
+          }
+          const meanReturn = returns.reduce((a, b) => a + b, 0) / returns.length;
+          const variance = returns.reduce((a, r) => a + (r - meanReturn) ** 2, 0) / returns.length;
+          const stdDev = Math.sqrt(variance);
+          if (stdDev > 0) {
+            sharpeRatio = (meanReturn / stdDev) * Math.sqrt(252); // annualized
+          }
+        }
+
+        // Compute max drawdown from equity curve
+        if (snapshots.length >= 2) {
+          let peak = snapshots[0].totalEquity;
+          for (const snap of snapshots) {
+            if (snap.totalEquity > peak) peak = snap.totalEquity;
+            const dd = (peak - snap.totalEquity) / peak;
+            if (dd > maxDrawdown) maxDrawdown = dd;
+          }
+          maxDrawdown = maxDrawdown * 100; // as percentage
+        }
+
         return {
           winRate: parseFloat(winRate.toFixed(1)),
           profitFactor: parseFloat(profitFactor.toFixed(2)),
           totalPnL: parseFloat(totalPnL.toFixed(2)),
-          sharpeRatio: 0, // requires equity time-series to compute properly
+          sharpeRatio: parseFloat(sharpeRatio.toFixed(2)),
           totalTrades,
           wins,
           averageWin: parseFloat(averageWin.toFixed(2)),
           maxDrawdown: parseFloat(maxDrawdown.toFixed(2))
         };
       }),
-    equityCurve: publicProcedure
+    equityCurve: protectedProcedure
       .input(z.object({ mode: z.enum(['real', 'paper']).optional() }).optional())
       .query(({ input }) => {
         const mode = input?.mode || 'paper';
@@ -487,10 +627,24 @@ export const appRouter = router({
         }
         return [];
       }),
-    getDailyReport: publicProcedure.query(() => ({
-       trades: []
-    })),
-    exportCSV: publicProcedure.query(() => 'Timestamp,Pair,Side,Price,PnL\n2024-05-24T12:00:00Z,BTCUSDT,BUY,65432,23.50')
+    getDailyReport: protectedProcedure.query(() => {
+      return {
+        trades: database.getState().trades.slice(-50).map(t => ({
+          symbol: t.symbol,
+          side: t.side,
+          price: t.price,
+          quantity: t.quantity,
+          pnl: t.realizedPnl,
+          timestamp: t.timestamp,
+        }))
+      };
+    }),
+    exportCSV: protectedProcedure.query(() => {
+      const trades = database.getState().trades;
+      const header = 'Timestamp,Pair,Side,Price,Quantity,PnL\n';
+      const rows = trades.map(t => `${t.timestamp},${t.symbol},${t.side},${t.price},${t.quantity},${t.realizedPnl}`).join('\n');
+      return header + rows;
+    })
   }),
   trading: router({
     orders: protectedProcedure
@@ -663,7 +817,7 @@ export const appRouter = router({
       })
   }),
   bot: router({
-    status: publicProcedure
+    status: protectedProcedure
       .input(z.object({ mode: z.enum(['real', 'paper']) }).optional())
       .query(({ input }) => {
          const mode = input?.mode || 'paper';
@@ -711,14 +865,14 @@ export const appRouter = router({
          const statusMap: any = { start: 'running', restart: 'running', stop: 'stopped', pause: 'paused' };
          return { success: true, status: statusMap[input.action] };
       }),
-    update: publicProcedure
+    update: protectedProcedure
       .input(z.object({ mode: z.enum(['real', 'paper']).optional(), voiceEnabled: z.boolean().optional(), notificationEnabled: z.boolean().optional() }))
       .mutation(({ input }) => {
          if (input.voiceEnabled !== undefined) globalBotSettings.voiceEnabled = input.voiceEnabled;
          if (input.notificationEnabled !== undefined) globalBotSettings.notificationEnabled = input.notificationEnabled;
          return { success: true };
       }),
-    logs: publicProcedure
+    logs: protectedProcedure
       .input(z.object({ mode: z.enum(['real', 'paper']).optional() }).optional())
       .query(({ input }) => {
          const filterMode = input?.mode;
@@ -727,7 +881,7 @@ export const appRouter = router({
       })
   }),
   risk: router({
-    getConfig: publicProcedure.query(() => ({ ...globalRiskConfig })),
+    getConfig: protectedProcedure.query(() => ({ ...globalRiskConfig })),
     updateConfig: protectedProcedure
       .input(z.object({
         globalOverrideEnabled: z.boolean().optional(),
@@ -748,6 +902,8 @@ export const appRouter = router({
         if (input.rebalanceOnExtremeVol !== undefined) {
           globalRiskConfig.rebalanceOnExtremeVol = input.rebalanceOnExtremeVol;
         }
+        // Propagate to the actual risk engine so changes take effect
+        globalRiskEngine.applyConfigOverride(globalRiskConfig);
         return { success: true };
       })
   })

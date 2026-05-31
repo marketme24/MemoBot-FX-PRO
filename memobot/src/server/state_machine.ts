@@ -64,6 +64,18 @@ export class EngineStateMachine {
     public getContext(evalId: string) {
         return this.activeEvals.get(evalId);
     }
+
+    // Prevent unbounded memory growth — purge completed/old entries
+    public cleanup() {
+        const now = Date.now();
+        const MAX_AGE_MS = 60_000; // 1 minute
+        for (const [id, ctx] of this.activeEvals.entries()) {
+            const age = now - ctx.startTime;
+            if (age > MAX_AGE_MS || ctx.state === 'COMPLETED' || ctx.state === 'REJECTED' || ctx.state === 'ABORTED_DUE_TO_REGIME_CHANGE') {
+                this.activeEvals.delete(id);
+            }
+        }
+    }
 }
 
 export const evaluationStateMachine = new EngineStateMachine();

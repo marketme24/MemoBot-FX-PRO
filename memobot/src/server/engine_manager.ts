@@ -33,12 +33,17 @@ class EngineManager {
   public bots: BotInstance[] = [];
 
   startBot(id: string, name: string, mode: TradingMode, exchange: string, symbol: string, apiKey?: string, secret?: string) {
+    // Block live mode without valid API keys
+    if (mode === 'real' && (!apiKey || apiKey === 'mock_key' || apiKey.length < 10)) {
+      throw new Error('Cannot start live trading bot without valid API keys. Set your Binance API keys in Settings first.');
+    }
+
     let existing = this.bots.find(b => b.id === id);
     
     if (existing && mode === 'real') {
        if (existing.status === 'error' || !existing.realEngine || apiKey) {
           try {
-            existing.realEngine = new RealEngine(exchange, apiKey || "mock_key", secret || "mock_secret");
+            existing.realEngine = new RealEngine(exchange, apiKey!, secret!);
           } catch(e: any) {
             console.error(`Failed to re-initialize real engine for ${id}:`, e);
           }
@@ -48,12 +53,12 @@ class EngineManager {
     if (!existing) {
        const bot: BotInstance = {
          id, name, mode, exchange, symbol, status: 'running',
-         priceHistory: Array.from({length: 60}, () => 60000 + Math.random() * 5000),
+         priceHistory: [],
          slTpOrders: new Map(),
        };
        if (mode === 'real') {
          try {
-           bot.realEngine = new RealEngine(exchange, apiKey || "mock_key", secret || "mock_secret");
+           bot.realEngine = new RealEngine(exchange, apiKey!, secret!);
          } catch(e: any) {
            console.error(`Failed to initialize real engine for ${id}:`, e);
          }
@@ -91,7 +96,7 @@ class EngineManager {
          if (existing!.priceHistory.length > 100) existing!.priceHistory.shift();
        }
 
-       if (existing!.priceHistory.length >= 2) {
+       if (existing!.priceHistory.length >= 10) {
          iBrain.updateMarketIntelligence(existing!.priceHistory, []);
        }
 
@@ -340,6 +345,28 @@ class EngineManager {
 
   getBotsByMode(mode: TradingMode) {
     return this.bots.filter(b => b.mode === mode);
+  }
+
+  // Initialize portfolio exposure from any existing positions on startup
+  initPortfolioFromPositions() {
+    for (const bot of this.bots) {
+      if (bot.realEngine) {
+        for (const pos of bot.realEngine.positions) {
+          if (pos.size > 0) {
+            const estValue = pos.size * pos.entryPrice;
+            portfolioEngine.registerExposure(pos.symbol, estValue);
+          }
+        }
+      }
+      if (bot.paperEngine) {
+        for (const pos of bot.paperEngine.positions) {
+          if (pos.size > 0) {
+            const estValue = pos.size * pos.entryPrice;
+            portfolioEngine.registerExposure(pos.symbol, estValue);
+          }
+        }
+      }
+    }
   }
 
   shutdown() {

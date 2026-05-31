@@ -152,6 +152,10 @@ class Database {
     return record;
   }
 
+  public getState() {
+    return this.state;
+  }
+
   public getBalanceHistory(limit = 100): BalanceSnapshot[] {
     return this.state.balanceSnapshots
       .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())

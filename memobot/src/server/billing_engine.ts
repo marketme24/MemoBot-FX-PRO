@@ -33,7 +33,9 @@ export class BillingEngine {
 
     private saveInvoices() {
         try {
-            fs.writeFileSync(INVOICE_FILE, JSON.stringify(this.invoices, null, 2));
+            const tmp = INVOICE_FILE + '.tmp';
+            fs.writeFileSync(tmp, JSON.stringify(this.invoices, null, 2));
+            fs.renameSync(tmp, INVOICE_FILE);
         } catch (e) {
             console.error("Failed to save invoices", e);
         }

@@ -18,13 +18,39 @@ interface RiskResult {
     reason: string;
 }
 
+export interface RiskConfigOverride {
+    globalOverrideEnabled: boolean;
+    maxDailyDrawdown: number;
+    hedgingEnabled: boolean;
+    rebalanceOnExtremeVol: boolean;
+}
+
 export class RiskEngine {
-    private static MAX_DRAWDOWN_PERCENT = 0.05; // 5% max drawdown limit
-    private static MAX_LEVERAGE = 10;
-    private static MAX_POSITION_SIZE_PERCENT = 0.10; // Max 10% of balance per trade
-    private static MAX_PORTFOLIO_EXPOSURE_PERCENT = 0.40; // Max 40% total exposure
+    private maxDrawdownPercent = 0.05;
+    private maxLeverage = 10;
+    private maxPositionSizePercent = 0.10;
+    private maxPortfolioExposurePercent = 0.40;
+    private hedgingEnabled = true;
+    private globalOverrideEnabled = true;
+    private rebalanceOnExtremeVol = true;
 
     constructor() {}
+
+    public applyConfigOverride(config: RiskConfigOverride) {
+        this.maxDrawdownPercent = config.maxDailyDrawdown / 100;
+        this.hedgingEnabled = config.hedgingEnabled;
+        this.globalOverrideEnabled = config.globalOverrideEnabled;
+        this.rebalanceOnExtremeVol = config.rebalanceOnExtremeVol;
+    }
+
+    public getActiveConfig(): RiskConfigOverride {
+        return {
+            globalOverrideEnabled: this.globalOverrideEnabled,
+            maxDailyDrawdown: this.maxDrawdownPercent * 100,
+            hedgingEnabled: this.hedgingEnabled,
+            rebalanceOnExtremeVol: this.rebalanceOnExtremeVol,
+        };
+    }
 
     public evaluateTrade(context: RiskContext): RiskResult {
         // 1. Hard Override: Hold logic
@@ -37,25 +63,37 @@ export class RiskEngine {
             };
         }
 
+        // 1b. Global override disabled — pass through everything
+        if (!this.globalOverrideEnabled) {
+            return {
+                approved: true,
+                modifiedSize: context.requestedSize,
+                modifiedLeverage: Math.min(context.requestedLeverage, this.maxLeverage),
+                reason: 'Global risk override disabled — manual mode.'
+            };
+        }
+
         // 2. Extreme Market Risk Override (The Kill-Switch)
         const currentIntel = iBrain.state.marketIntel;
         if (currentIntel.riskLevel === 'EXTREME') {
-             return {
-                 approved: false,
-                 modifiedSize: 0,
-                 modifiedLeverage: 1,
-                 reason: 'KILL SWITCH: Extreme market volatility detected.'
-             };
+             if (this.rebalanceOnExtremeVol) {
+                 return {
+                     approved: false,
+                     modifiedSize: 0,
+                     modifiedLeverage: 1,
+                     reason: 'KILL SWITCH: Extreme market volatility detected. Rebalance-on-extreme-vol is active.'
+                 };
+             }
         }
 
         // 3. Leverage Safety Check & Volatility Filter
-        let finalLeverage = Math.min(context.requestedLeverage, RiskEngine.MAX_LEVERAGE);
+        let finalLeverage = Math.min(context.requestedLeverage, this.maxLeverage);
         if (currentIntel.riskLevel === 'HIGH') {
-             finalLeverage = Math.min(finalLeverage, 2); // Cap leverage heavily in high risk
+             finalLeverage = Math.min(finalLeverage, 2);
         }
 
         // 4. Position & Portfolio Exposure Limits
-        const maxDollarRisk = context.accountBalance * RiskEngine.MAX_POSITION_SIZE_PERCENT;
+        const maxDollarRisk = context.accountBalance * this.maxPositionSizePercent;
         let finalSize = Math.min(context.requestedSize, maxDollarRisk);
         
         // Ensure final size is at least $15 for exchange MIN_NOTIONAL limits if balance allows
@@ -64,7 +102,7 @@ export class RiskEngine {
         }
 
         const currentPortfolio = portfolioEngine.getGlobalRiskMetrics();
-        const maxAllowedExposure = context.accountBalance * RiskEngine.MAX_PORTFOLIO_EXPOSURE_PERCENT;
+        const maxAllowedExposure = context.accountBalance * this.maxPortfolioExposurePercent;
         const availableExposure = maxAllowedExposure - currentPortfolio.exposure;
 
         if (availableExposure <= 0) {
@@ -72,7 +110,7 @@ export class RiskEngine {
                  approved: false,
                  modifiedSize: 0,
                  modifiedLeverage: 1,
-                 reason: `HARD REJECT: Max portfolio exposure (${RiskEngine.MAX_PORTFOLIO_EXPOSURE_PERCENT * 100}%) reached.`
+                 reason: `HARD REJECT: Max portfolio exposure (${this.maxPortfolioExposurePercent * 100}%) reached.`
             };
         }
 
