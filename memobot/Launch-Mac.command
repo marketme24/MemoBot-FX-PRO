@@ -9,7 +9,7 @@ npm run dev > /dev/null 2>&1 &
 sleep 5
 
 # Open the browser
-open http://localhost:3000
+open http://localhost:5000
 
 # Hide the terminal window (optional attempt for MacOS)
 osascript -e 'tell application "Terminal" to set visible of front window to false'
