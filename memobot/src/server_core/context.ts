@@ -1,8 +1,10 @@
 import { inferAsyncReturnType, initTRPC, TRPCError } from '@trpc/server';
 import type * as trpcExpress from '@trpc/server/adapters/express';
 import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
 
-// Server-side session store for authenticated users
+// --- Persistent session store ---
 interface SessionData {
   userId: string;
   email: string;
@@ -11,7 +13,47 @@ interface SessionData {
   expiresAt: number;
 }
 
+const DATA_DIR = path.join(process.cwd(), 'data');
+const SESSIONS_FILE = path.join(DATA_DIR, 'sessions.json');
+
+function ensureDataDir() {
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+
+function atomicWriteFile(filePath: string, data: string) {
+  ensureDataDir();
+  const tmp = filePath + '.tmp';
+  fs.writeFileSync(tmp, data);
+  fs.renameSync(tmp, filePath);
+}
+
 const sessionStore = new Map<string, SessionData>();
+let sessionSaveDebounce: ReturnType<typeof setTimeout> | null = null;
+
+function loadSessions() {
+  try {
+    if (fs.existsSync(SESSIONS_FILE)) {
+      const entries: Record<string, SessionData> = JSON.parse(fs.readFileSync(SESSIONS_FILE, 'utf-8'));
+      const now = Date.now();
+      for (const [token, session] of Object.entries(entries)) {
+        if (now < session.expiresAt) {
+          sessionStore.set(token, session);
+        }
+      }
+    }
+  } catch { /* start fresh */ }
+}
+
+function saveSessions() {
+  if (sessionSaveDebounce) clearTimeout(sessionSaveDebounce);
+  sessionSaveDebounce = setTimeout(() => {
+    const obj: Record<string, SessionData> = {};
+    for (const [k, v] of sessionStore.entries()) obj[k] = v;
+    atomicWriteFile(SESSIONS_FILE, JSON.stringify(obj, null, 2));
+  }, 1000);
+}
+
+loadSessions();
 
 // Session lifetime: 24 hours
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
@@ -26,11 +68,13 @@ export function createSession(userId: string, email: string, role: 'admin' | 'us
     createdAt: now,
     expiresAt: now + SESSION_TTL_MS,
   });
+  saveSessions();
   return token;
 }
 
 export function invalidateSession(token: string): void {
   sessionStore.delete(token);
+  saveSessions();
 }
 
 function getSession(token: string): SessionData | null {
@@ -38,6 +82,7 @@ function getSession(token: string): SessionData | null {
   if (!session) return null;
   if (Date.now() > session.expiresAt) {
     sessionStore.delete(token);
+    saveSessions();
     return null;
   }
   return session;
@@ -46,9 +91,14 @@ function getSession(token: string): SessionData | null {
 // Periodically clean expired sessions
 setInterval(() => {
   const now = Date.now();
+  let changed = false;
   for (const [token, session] of sessionStore.entries()) {
-    if (now > session.expiresAt) sessionStore.delete(token);
+    if (now > session.expiresAt) {
+      sessionStore.delete(token);
+      changed = true;
+    }
   }
+  if (changed) saveSessions();
 }, 60 * 60 * 1000);
 
 export const createContext = ({ req, res }: trpcExpress.CreateExpressContextOptions) => {

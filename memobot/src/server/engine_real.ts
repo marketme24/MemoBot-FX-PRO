@@ -196,10 +196,10 @@ export class RealEngine {
   
   private saveState() {
     try {
-      fs.writeFileSync(DB_FILE, JSON.stringify({
-        orders: this.orders, 
-        positions: this.positions,
-      }));
+      const data = JSON.stringify({ orders: this.orders, positions: this.positions });
+      const tmpFile = DB_FILE + '.tmp';
+      fs.writeFileSync(tmpFile, data);
+      fs.renameSync(tmpFile, DB_FILE);
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
       logger.error(`Failed to save RealEngine state: ${message}`);

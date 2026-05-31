@@ -97,6 +97,33 @@ async function startServer() {
   
   BinanceWS.connect();
   setupWebSocketServer(httpServer);
+
+  // --- Graceful shutdown ---
+  const shutdown = async (signal: string) => {
+    console.log(`\n[SHUTDOWN] Received ${signal}. Shutting down gracefully...`);
+    
+    // Stop trading engines
+    const { engineManager } = await import('./src/server/engine_manager');
+    engineManager.shutdown();
+    
+    // Close WebSocket connections
+    BinanceWS.disconnect?.();
+    
+    // Close HTTP server
+    httpServer.close(() => {
+      console.log('[SHUTDOWN] HTTP server closed.');
+      process.exit(0);
+    });
+    
+    // Force exit after 10 seconds
+    setTimeout(() => {
+      console.error('[SHUTDOWN] Forced exit after timeout.');
+      process.exit(1);
+    }, 10000).unref();
+  };
+
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
 }
 
 startServer();

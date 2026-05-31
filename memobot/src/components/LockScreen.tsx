@@ -15,6 +15,7 @@ export function LockScreen({ onUnlock }: { onUnlock: () => void }) {
   const [error, setError] = useState(false);
   const [mode, setMode] = useState<'pin' | 'email'>('pin');
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const verifyPin = trpc.admin.verifyPin.useMutation();
 
@@ -44,15 +45,15 @@ export function LockScreen({ onUnlock }: { onUnlock: () => void }) {
 
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email) return;
+    if (!email || !password) return;
     setIsLoggingIn(true);
     try {
-      const success = await login(email);
+      const success = await login(email, password);
       if (success) {
         toast.success("Authentication successful");
         onUnlock();
       } else {
-        toast.error("Failed to authenticate");
+        toast.error("Invalid email or password");
         setIsLoggingIn(false);
       }
     } catch (err) {
@@ -184,9 +185,21 @@ export function LockScreen({ onUnlock }: { onUnlock: () => void }) {
                      autoFocus
                   />
                </div>
+               <div>
+                  <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-3">Password</label>
+                  <input 
+                     type="password" 
+                     value={password}
+                     onChange={(e) => setPassword(e.target.value)}
+                     className="w-full bg-black/50 border border-white/10 rounded-2xl px-4 py-4 text-primary font-mono text-sm outline-none focus:border-blue-500/50 transition-colors" 
+                     placeholder="Enter your password"
+                     required
+                     minLength={8}
+                  />
+               </div>
                <button 
                   type="submit" 
-                  disabled={isLoggingIn || !email}
+                  disabled={isLoggingIn || !email || !password}
                   className="w-full h-14 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-2xl font-black uppercase tracking-widest text-xs flex items-center justify-center gap-2 transition-colors"
                >
                  {isLoggingIn ? 'Authenticating...' : 'Sign In'}

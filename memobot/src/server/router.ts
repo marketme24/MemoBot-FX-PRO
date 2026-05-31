@@ -3,14 +3,51 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import ccxt from 'ccxt';
 import crypto from 'crypto';
+import bcrypt from 'bcryptjs';
+import fs from 'fs';
+import path from 'path';
 import { engineManager, TradingMode } from './engine_manager';
 import { iBrain } from './ibrain';
 import { database } from './database';
 
-// Server-side API key storage (never sent to/from frontend)
-const apiKeyStore = new Map<string, { apiKey: string; apiSecret: string }>();
+// --- Persistent store file paths ---
+const DATA_DIR = path.join(process.cwd(), 'data');
+const USERS_FILE = path.join(DATA_DIR, 'users.json');
+const API_KEYS_FILE = path.join(DATA_DIR, 'api_keys.json');
 
-// User credential store with hashed passwords
+function ensureDataDir() {
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+
+function atomicWrite(filePath: string, data: string) {
+  ensureDataDir();
+  const tmp = filePath + '.tmp';
+  fs.writeFileSync(tmp, data);
+  fs.renameSync(tmp, filePath);
+}
+
+// --- Persistent API key storage ---
+interface ApiKeyEntry { apiKey: string; apiSecret: string; }
+const apiKeyStore = new Map<string, ApiKeyEntry>();
+
+function loadApiKeys() {
+  try {
+    if (fs.existsSync(API_KEYS_FILE)) {
+      const entries: Record<string, ApiKeyEntry> = JSON.parse(fs.readFileSync(API_KEYS_FILE, 'utf-8'));
+      for (const [k, v] of Object.entries(entries)) apiKeyStore.set(k, v);
+    }
+  } catch { /* start fresh */ }
+}
+
+function saveApiKeys() {
+  const obj: Record<string, ApiKeyEntry> = {};
+  for (const [k, v] of apiKeyStore.entries()) obj[k] = v;
+  atomicWrite(API_KEYS_FILE, JSON.stringify(obj, null, 2));
+}
+
+loadApiKeys();
+
+// --- Persistent user credential store with bcrypt ---
 interface StoredUser {
   id: string;
   email: string;
@@ -18,27 +55,71 @@ interface StoredUser {
   role: 'admin' | 'user';
 }
 
-function hashPassword(password: string): string {
-  return crypto.createHash('sha256').update(password).digest('hex');
-}
-
 const userStore = new Map<string, StoredUser>();
 
-// Seed admin user from environment or use default for initial setup
+function loadUsers() {
+  try {
+    if (fs.existsSync(USERS_FILE)) {
+      const users: StoredUser[] = JSON.parse(fs.readFileSync(USERS_FILE, 'utf-8'));
+      for (const u of users) userStore.set(u.email, u);
+    }
+  } catch { /* start fresh */ }
+}
+
+function saveUsers() {
+  const arr = Array.from(userStore.values());
+  atomicWrite(USERS_FILE, JSON.stringify(arr, null, 2));
+}
+
+loadUsers();
+
+// Seed admin user from environment (only if not already persisted)
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@memobot.local';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
-if (ADMIN_PASSWORD) {
+if (ADMIN_PASSWORD && !userStore.has(ADMIN_EMAIL)) {
   const adminId = crypto.randomUUID();
   userStore.set(ADMIN_EMAIL, {
     id: adminId,
     email: ADMIN_EMAIL,
-    passwordHash: hashPassword(ADMIN_PASSWORD),
+    passwordHash: bcrypt.hashSync(ADMIN_PASSWORD, 10),
     role: 'admin',
   });
+  saveUsers();
+}
+
+// --- Login attempt rate limiting ---
+const loginAttempts = new Map<string, { count: number; resetAt: number }>();
+const MAX_LOGIN_ATTEMPTS = 5;
+const LOGIN_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+
+function checkRateLimit(email: string): void {
+  const now = Date.now();
+  const entry = loginAttempts.get(email);
+  if (entry && now < entry.resetAt && entry.count >= MAX_LOGIN_ATTEMPTS) {
+    throw new TRPCError({
+      code: 'TOO_MANY_REQUESTS',
+      message: `Too many login attempts. Try again in ${Math.ceil((entry.resetAt - now) / 60000)} minutes.`,
+    });
+  }
+}
+
+function recordLoginAttempt(email: string) {
+  const now = Date.now();
+  const entry = loginAttempts.get(email);
+  if (!entry || now >= entry.resetAt) {
+    loginAttempts.set(email, { count: 1, resetAt: now + LOGIN_WINDOW_MS });
+  } else {
+    entry.count++;
+  }
+}
+
+function clearLoginAttempts(email: string) {
+  loginAttempts.delete(email);
 }
 
 export function setApiKeys(userId: string, apiKey: string, apiSecret: string) {
   apiKeyStore.set(userId, { apiKey, apiSecret });
+  saveApiKeys();
 }
 
 export function getApiKeys(userId: string): { apiKey: string; apiSecret: string } | undefined {
@@ -80,22 +161,17 @@ setInterval(() => {
     }
   }
 
-  // Very basic simulation for paper bots running
-  for (const bot of paperBots) {
-    if (bot.status === 'running' && bot.paperEngine) {
-      if (Math.random() > 0.8) {
-         const ticker = tickers[Math.floor(Math.random() * tickers.length)];
-         const side = Math.random() > 0.5 ? 'buy' : 'sell';
-         try {
-            bot.paperEngine.placeOrder(ticker.symbol, side, 'market', 0.01, ticker.price);
-            botLogs.unshift({ id: Math.random(), timestamp: new Date(), message: `[PAPER SIMULATION] EXECUTED: ${side.toUpperCase()} ${ticker.symbol} @ ${ticker.price.toFixed(2)}`, level: 'info', mode: 'paper' });
-         } catch(e: any) {
-            // Insufficient balance etc
-         }
-      }
-    }
-  }
+  // Paper bots now rely on the engine_manager strategy loop for trade decisions.
+  // Removed random trade injection that was polluting analytics.
 }, 3000);
+
+// --- Global risk config (mutable via risk.updateConfig) ---
+const globalRiskConfig = {
+  globalOverrideEnabled: true,
+  maxDailyDrawdown: 5,
+  hedgingEnabled: true,
+  rebalanceOnExtremeVol: true,
+};
 
 const userActivitiesMap = new Map<string, any[]>();
 function addUserActivity(userId: string, category: string, message: string, level: string = 'info') {
@@ -123,13 +199,16 @@ export const appRouter = router({
     login: publicProcedure
       .input(z.object({ email: z.string().email(), password: z.string().min(1) }))
       .mutation(({ input }) => {
+        checkRateLimit(input.email);
         const user = userStore.get(input.email);
-        if (!user || user.passwordHash !== hashPassword(input.password)) {
+        if (!user || !bcrypt.compareSync(input.password, user.passwordHash)) {
+          recordLoginAttempt(input.email);
           throw new TRPCError({
             code: 'UNAUTHORIZED',
             message: 'Invalid email or password.',
           });
         }
+        clearLoginAttempts(input.email);
         const token = createSession(user.id, user.email, user.role);
         return {
           token,
@@ -154,10 +233,11 @@ export const appRouter = router({
         const user: StoredUser = {
           id: userId,
           email: input.email,
-          passwordHash: hashPassword(input.password),
+          passwordHash: bcrypt.hashSync(input.password, 10),
           role: 'user',
         };
         userStore.set(input.email, user);
+        saveUsers();
         const token = createSession(userId, input.email, 'user');
         return {
           token,
@@ -249,8 +329,12 @@ export const appRouter = router({
        }
     }),
     verifyPin: protectedProcedure
-      .input(z.object({ pin: z.string() }))
-      .mutation(({ input }) => { return { success: input.pin === '1234' || input.pin.length === 4 }; }),
+      .input(z.object({ pin: z.string().length(4) }))
+      .mutation(({ ctx, input }) => {
+        const user = Array.from(userStore.values()).find(u => u.id === ctx.session.userId);
+        if (!user) return { success: false };
+        return { success: bcrypt.compareSync(input.pin, user.passwordHash) };
+      }),
     updateSubscription: adminProcedure
       .input(z.object({ userId: z.string(), plan: z.string() }))
       .mutation(({ input }) => {
@@ -643,15 +727,29 @@ export const appRouter = router({
       })
   }),
   risk: router({
-    getConfig: publicProcedure.query(() => ({
-       globalOverrideEnabled: true,
-       maxDailyDrawdown: 5,
-       hedgingEnabled: true,
-       rebalanceOnExtremeVol: true
-    })),
+    getConfig: publicProcedure.query(() => ({ ...globalRiskConfig })),
     updateConfig: protectedProcedure
-      .input(z.any())
-      .mutation(() => ({ success: true }))
+      .input(z.object({
+        globalOverrideEnabled: z.boolean().optional(),
+        maxDailyDrawdown: z.number().min(0.1).max(50).optional(),
+        hedgingEnabled: z.boolean().optional(),
+        rebalanceOnExtremeVol: z.boolean().optional(),
+      }))
+      .mutation(({ input }) => {
+        if (input.maxDailyDrawdown !== undefined) {
+          globalRiskConfig.maxDailyDrawdown = input.maxDailyDrawdown;
+        }
+        if (input.globalOverrideEnabled !== undefined) {
+          globalRiskConfig.globalOverrideEnabled = input.globalOverrideEnabled;
+        }
+        if (input.hedgingEnabled !== undefined) {
+          globalRiskConfig.hedgingEnabled = input.hedgingEnabled;
+        }
+        if (input.rebalanceOnExtremeVol !== undefined) {
+          globalRiskConfig.rebalanceOnExtremeVol = input.rebalanceOnExtremeVol;
+        }
+        return { success: true };
+      })
   })
 });
 

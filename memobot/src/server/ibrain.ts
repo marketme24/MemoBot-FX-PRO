@@ -92,7 +92,10 @@ export class IBrainSystem {
 
   private saveMemory() {
     try {
-      fs.writeFileSync(this.memoryStoreFile, JSON.stringify(this.memories, null, 2));
+      const data = JSON.stringify(this.memories, null, 2);
+      const tmpFile = this.memoryStoreFile + '.tmp';
+      fs.writeFileSync(tmpFile, data);
+      fs.renameSync(tmpFile, this.memoryStoreFile);
       this.state.memoryStats.totalMemories = this.memories.length;
     } catch(e) {
       console.error("Failed to save I-Brain memory", e);
